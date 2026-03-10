@@ -1,0 +1,140 @@
+"""
+PIPELINE — Two LLM calls:
+  1. structured_call() → PostingExtract  (extraction)
+  2. structured_call() → QAReport        (quality audit)
+
+Everything else is deterministic Python:
+  - fetch + normalize  (fetcher.py)
+  - classify kind      (classifier.py)
+  - render markdown    (renderer.py)
+  - write output files (here)
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+from jobpostprofiler.config import AppConfig
+from jobpostprofiler.core.fetcher import fetch_and_normalize, FetchResult
+from jobpostprofiler.core.classifier import classify_kind
+from jobpostprofiler.core.renderer import render_markdown
+from jobpostprofiler.llm.client import get_client, structured_call
+from jobpostprofiler.llm.prompts import EXTRACTOR_SYSTEM, EXTRACTOR_USER_TEMPLATE, QA_SYSTEM, QA_USER_TEMPLATE
+from jobpostprofiler.models.job_models import PostingExtract, Source
+from jobpostprofiler.models.qa_models import QAReport
+
+
+@dataclass
+class PipelineResult:
+    extract: PostingExtract
+    markdown: str
+    qa: QAReport
+    run_id: str
+    output_dir: Path
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+def run_pipeline(
+    *,
+    url: str = "",
+    text: str = "",
+    filepath: str = "",
+    cfg: AppConfig | None = None,
+    client=None,          # injectable for tests
+    uid = None
+) -> PipelineResult:
+    """
+    Full pipeline: fetch → classify → extract → render → qa → write.
+    Returns PipelineResult with all artifacts.
+    """
+    cfg = cfg or AppConfig()
+    # run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_id = uid 
+    output_dir = Path(cfg.output_dir) / Path(run_id)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    client = client or get_client(base_url=cfg.URL, api_key=cfg.API_KEY)
+
+    # ------------------------------------------------------------------
+    # Step 1: Fetch + Normalize
+    # ------------------------------------------------------------------
+    fetch_result: FetchResult = fetch_and_normalize(url=url, text=text, filepath=filepath)
+    _write(output_dir / "normalized_job_post.txt", fetch_result.text)
+
+    # ------------------------------------------------------------------
+    # Step 2: Classify posting kind (pure Python heuristic)
+    # ------------------------------------------------------------------
+    kind = classify_kind(fetch_result.text)
+    _write(output_dir / "posting_kind.json", json.dumps({"kind": kind, "warnings": []}, indent=2))
+
+    # ------------------------------------------------------------------
+    # Step 3: Extract structured fields — LLM call #1
+    # ------------------------------------------------------------------
+    source = Source(
+        extracted_at=run_id,
+        input_type=fetch_result.input_type if fetch_result.input_type in ("url", "text") else "text",
+        url=fetch_result.url,
+        file_path=fetch_result.file_path or str(output_dir / "normalized_job_post.txt"),
+    )
+
+    user_msg = EXTRACTOR_USER_TEMPLATE.format(
+        kind=kind, 
+        text=fetch_result.text
+    )
+    user_msg += f"\n\nSource metadata:\n{source.model_dump_json(indent=2)}"
+
+    extract: PostingExtract = structured_call(
+        client=client, 
+        model=cfg.MODEL_NAME,
+        system_prompt=EXTRACTOR_SYSTEM, 
+        user_message=user_msg,
+        output_type=PostingExtract, 
+        temperature=0.0,
+    )
+    _write(output_dir / "job_extract.json", extract.model_dump_json(indent=2))
+
+    # ------------------------------------------------------------------
+    # Step 4: Render markdown (pure Python / Jinja2)
+    # ------------------------------------------------------------------
+    markdown = render_markdown(extract)
+    _write(output_dir / "job_summary.md", markdown)
+
+    # ------------------------------------------------------------------
+    # Step 5: QA audit — LLM call #2
+    # ------------------------------------------------------------------
+    qa_msg = QA_USER_TEMPLATE.format(
+        text=fetch_result.text, 
+        extract_json=extract.model_dump_json(indent=2)
+    )
+    
+    qa: QAReport = structured_call(
+        client=client, 
+        model=cfg.MODEL_NAME,
+        system_prompt=QA_SYSTEM, 
+        user_message=qa_msg,
+        output_type=QAReport, 
+        temperature=0.0,
+    )
+    _write(output_dir / "quality_report.json", qa.model_dump_json(indent=2))
+
+    return PipelineResult(
+        extract=extract, 
+        markdown=markdown, 
+        qa=qa, 
+        run_id=run_id, 
+        output_dir=output_dir
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _write(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")

@@ -25,10 +25,17 @@ EXTRACTION RULES:
 6. Copy exact wording for strings. Do not paraphrase titles, locations, or compensation.
 7. skills.required = short labels only (e.g. "Python", "AWS"). Not full sentences.
 
+INTERNSHIP-SPECIFIC RULES:
+- For internship postings: extract duration, start/end dates, stipend, housing/relocation info.
+- academic_level: extract from requirements if mentioned (e.g., "Sophomore", "Junior", "graduating").
+- mentorship_provided, return_offer_potential: extract as true ONLY if explicitly stated.
+- Set to null (not false) if the posting doesn't mention these fields.
+
 DETAILS SHAPE:
 - details must be a single flat object with a top-level "kind" field.
 - For employment: kind="employment", with nested "company" and "role" sub-objects.
 - For freelance: kind="freelance", with gig/client fields.
+- For internship: kind="internship", with nested "company" and "role" sub-objects, plus internship-specific fields.
 - Do NOT include a "warnings" key inside details — warnings go in the top-level "warnings" list only.
 - Do NOT add any keys not defined in the schema.
 
@@ -62,6 +69,10 @@ AUTOMATIC FAIL CONDITIONS:
 - details.company has all null fields AND warnings list has no "missing:details.company.*" entry
 - details.role has all null fields AND warnings list has no "missing:details.role.*" entry
 - These always indicate extraction failure, not genuinely missing data in source.
+
+INTERNSHIP-SPECIFIC QA:
+- For internship postings: verify duration, start/end dates, or any internship-specific field is present.
+- If academic_level, mentorship_provided, or return_offer_potential are set to false/null, confirm the posting doesn't mention them.
 
 Respond ONLY with valid JSON. No markdown, no commentary.
 """

@@ -91,6 +91,36 @@ class FreelanceDetails(BaseModel):
 
 
 # -------------------------
+# Internship models
+# -------------------------
+
+class InternshipDetails(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"description": 
+                           "Internship posting details. Contains: kind, company, role, plus internship-specific fields "
+                           "(duration, dates, stipend, mentorship, academic requirements, return offer potential)."
+                           }
+        )
+
+    # No warnings field here. Warnings belong in PostingExtract.warnings only.
+    kind: Literal["internship"] = "internship"
+    company: CompanyInfo = Field(default_factory=CompanyInfo)
+    role: RoleDetails = Field(default_factory=RoleDetails)
+    duration: Optional[str] = Field(default=None, description="Internship duration, e.g. '12 weeks', '3 months', 'Summer 2026'.")
+    start_date: Optional[str] = Field(default=None, description="Start date as stated in posting.")
+    end_date: Optional[str] = Field(default=None, description="End date as stated in posting.")
+    stipend: Optional[str] = Field(default=None, description="Stipend/salary if stated, with currency.")
+    housing_provided: Optional[bool] = Field(default=None, description="Whether housing is provided.")
+    relocation_assistance: Optional[bool] = Field(default=None, description="Whether relocation assistance is offered.")
+    academic_level: Optional[str] = Field(default=None, description="Target academic level, e.g. 'Sophomore', 'Junior', 'Senior', or 'high school'.")
+    field_of_study: Optional[str] = Field(default=None, description="Field of study if specified.")
+    gpa_requirement: Optional[str] = Field(default=None, description="Minimum GPA if stated.")
+    mentorship_provided: Optional[bool] = Field(default=None, description="Whether mentorship/guidance is highlighted.")
+    return_offer_potential: Optional[bool] = Field(default=None, description="Whether return offer potential is mentioned.")
+
+
+# -------------------------
 # Skills
 # -------------------------
 
@@ -118,6 +148,7 @@ class Source(BaseModel):
     input_type: Literal["url", "text"] = Field(description="Input mode: 'url' or 'text'.")
     url: Optional[str] = Field(default=None, description="URL if input_type is 'url'.")
     file_path: Optional[str] = Field(default=None, description="Normalized file path if input_type is 'text'.")
+    source_platform: Optional[str] = Field(default=None, description="Platform identifier if detectable (e.g. 'linkedin', 'upwork', 'wellfound'). For extensibility and platform-specific filtering.")
 
     @computed_field
     @property
@@ -131,7 +162,7 @@ class Source(BaseModel):
 # -------------------------
 
 PostingDetails = Annotated[
-    Union[EmploymentDetails, FreelanceDetails],
+    Union[EmploymentDetails, FreelanceDetails, InternshipDetails],
     Field(discriminator="kind"),
 ]
 

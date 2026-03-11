@@ -147,6 +147,95 @@ FREELANCE_TEMPLATE = """\
 *Extracted from: {{ source.ref }}*
 """
 
+INTERNSHIP_TEMPLATE = """\
+# {{ title_line }}
+
+## Role Details
+| Field | Value |
+|---|---|
+| Job Title | {{ role.job_title or "Not stated" }} |
+| Seniority | {{ role.seniority or "Not stated" }} |
+| Team | {{ role.team or "Not stated" }} |
+| Location | {{ role.location or "Not stated" }} |
+| Workplace Type | {{ role.workplace_type or "Not stated" }} |
+| Compensation | {{ role.compensation or "Not stated" }} |
+| Visa Sponsorship | {{ role.visa_sponsorship or "Not stated" }} |
+
+## Company
+| Field | Value |
+|---|---|
+| Name | {{ company.name or "Not stated" }} |
+| Industry | {{ company.industry or "Not stated" }} |
+| Size | {{ company.company_size or "Not stated" }} |
+| HQ | {{ company.headquarters or "Not stated" }} |
+
+{% if company.description %}
+**About:** {{ company.description }}
+{% endif %}
+
+## Internship Details
+| Field | Value |
+|---|---|
+| Duration | {{ details.duration or "Not stated" }} |
+| Start Date | {{ details.start_date or "Not stated" }} |
+| End Date | {{ details.end_date or "Not stated" }} |
+| Stipend | {{ details.stipend or "Not stated" }} |
+| Housing Provided | {{ details.housing_provided if details.housing_provided is not none else "Not stated" }} |
+| Relocation Assistance | {{ details.relocation_assistance if details.relocation_assistance is not none else "Not stated" }} |
+| Mentorship | {{ details.mentorship_provided if details.mentorship_provided is not none else "Not stated" }} |
+| Return Offer Potential | {{ details.return_offer_potential if details.return_offer_potential is not none else "Not stated" }} |
+
+## Academic Requirements
+| Field | Value |
+|---|---|
+| Academic Level | {{ details.academic_level or "Not stated" }} |
+| Field of Study | {{ details.field_of_study or "Not stated" }} |
+| GPA Requirement | {{ details.gpa_requirement or "Not stated" }} |
+
+## Responsibilities
+{% for r in responsibilities %}
+- {{ r }}
+{% else %}
+- Not stated
+{% endfor %}
+
+## Requirements
+{% for r in requirements %}
+- {{ r }}
+{% else %}
+- Not stated
+{% endfor %}
+
+## Preferred Qualifications
+{% for r in preferred_qualifications %}
+- {{ r }}
+{% else %}
+- Not stated
+{% endfor %}
+
+## Skills
+**Required:** {% if skills.required %}{{ skills.required | join(", ") }}{% else %}Not stated{% endif %}
+
+**Preferred:** {% if skills.preferred %}{{ skills.preferred | join(", ") }}{% else %}Not stated{% endif %}
+
+## Benefits
+{% for b in benefits %}
+- {{ b }}
+{% else %}
+- Not stated
+{% endfor %}
+
+{% if warnings %}
+## ⚠️ Extraction Warnings
+{% for w in warnings %}
+- {{ w }}
+{% endfor %}
+{% endif %}
+
+---
+*Extracted from: {{ source.ref }}*
+"""
+
 
 # ---------------------------------------------------------------------------
 # Render entry point
@@ -161,15 +250,23 @@ def render_markdown(extract: PostingExtract) -> str:
     Fully deterministic — no LLM call.
     """
     kind = extract.posting_kind
-    template_str = EMPLOYMENT_TEMPLATE if kind == "employment" else FREELANCE_TEMPLATE
-
+    
     if kind == "employment":
+        template_str = EMPLOYMENT_TEMPLATE
         title_parts = [
             extract.details.role.job_title,
             extract.details.company.name,
         ]
         title_line = " @ ".join(p for p in title_parts if p) or "Job Posting"
+    elif kind == "internship":
+        template_str = INTERNSHIP_TEMPLATE
+        title_parts = [
+            extract.details.role.job_title or "Internship",
+            extract.details.company.name,
+        ]
+        title_line = " @ ".join(p for p in title_parts if p) or "Internship Posting"
     else:
+        template_str = FREELANCE_TEMPLATE
         title_line = extract.details.title or "Freelance Posting"
         if extract.details.platform:
             title_line += f" ({extract.details.platform})"
@@ -179,8 +276,8 @@ def render_markdown(extract: PostingExtract) -> str:
         title_line=title_line,
         source=extract.source,
         details=extract.details,
-        company=extract.details.company if kind == "employment" else None,
-        role=extract.details.role if kind == "employment" else None,
+        company=extract.details.company if kind in ("employment", "internship") else None,
+        role=extract.details.role if kind in ("employment", "internship") else None,
         responsibilities=extract.responsibilities,
         requirements=extract.requirements,
         preferred_qualifications=extract.preferred_qualifications,

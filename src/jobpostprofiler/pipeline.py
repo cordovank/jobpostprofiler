@@ -12,6 +12,7 @@ Everything else is deterministic Python:
 
 from __future__ import annotations
 
+import os
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -39,24 +40,22 @@ class PipelineResult:
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
-
 def run_pipeline(
     *,
     url: str = "",
     text: str = "",
     filepath: str = "",
     cfg: AppConfig | None = None,
-    client=None,          # injectable for tests
-    uid = None
+    client=None,
+    uid: str | None = None,
 ) -> PipelineResult:
     """
     Full pipeline: fetch → classify → extract → render → qa → write.
     Returns PipelineResult with all artifacts.
     """
     cfg = cfg or AppConfig()
-    # run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_id = uid 
-    output_dir = Path(cfg.output_dir) / Path(run_id)
+    run_id = uid or datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = Path(cfg.output_dir) / run_id
     output_dir.mkdir(parents=True, exist_ok=True)
 
     client = client or get_client(base_url=cfg.URL, api_key=cfg.API_KEY)
@@ -122,6 +121,24 @@ def run_pipeline(
         temperature=0.0,
     )
     _write(output_dir / "quality_report.json", qa.model_dump_json(indent=2))
+
+    # ------------------------------------------------------------------
+    # Step 6: Add tracker
+    # ------------------------------------------------------------------
+    try:
+        from jobpostprofiler.db.store import save_job_from_extract
+        save_job_from_extract(
+            extract=extract.model_dump(),
+            qa_report=qa.model_dump(),
+            run_id=run_id,
+            normalized_text=fetch_result.text,
+            source_channel=os.getenv("SOURCE_CHANNEL", "other"),
+        )
+    except Exception as _tracker_err:
+        # Tracker failure never breaks the pipeline
+        print(f"[tracker] Warning: could not save to DB — {_tracker_err}")
+
+
 
     return PipelineResult(
         extract=extract, 

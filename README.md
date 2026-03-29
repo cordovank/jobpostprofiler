@@ -286,7 +286,7 @@ Paste a job URL or the full posting text, click **Run extraction**, and view:
 ### Option B — CLI
 
 ```bash
-python -m jobpostprofiler.main
+uv run -m jobpostprofiler.main
 ```
 
 Uses the example posting in `main.py`. Useful for quick local testing and verifying model output.
@@ -294,10 +294,46 @@ Uses the example posting in `main.py`. Useful for quick local testing and verify
 ### Tests
 
 ```bash
-pytest
+uv run python -m pytest
 ```
 
 Unit tests cover `core/` (no LLM required). Integration tests use a mock client and fixture postings.
+
+---
+
+## Job Tracker
+
+The pipeline automatically saves every extraction to a local SQLite database (`jobs.db` at repo root). A companion CLI lets you manage your job search pipeline from the terminal.
+
+```bash
+# View all tracked jobs (creates jobs.db on first run)
+python tracker_cli.py status
+
+# Filter by status
+python tracker_cli.py status --status applied
+
+# Log an application
+python tracker_cli.py apply <job_id> --resume ML
+
+# Update a job's status
+python tracker_cli.py update <job_id> --status phone_screen
+
+# Add notes to a job
+python tracker_cli.py notes <job_id> "Great team, async culture"
+
+# Check what needs follow-up
+python tracker_cli.py followup
+
+# Export a Markdown summary
+python tracker_cli.py export --out report.md
+
+# Manually load a previous pipeline run
+python tracker_cli.py save output/<run_id>/ --channel wellfound
+```
+
+**Status flow:** `found → applied → phone_screen → technical → offer | rejected | ghosted`
+
+`jobs.db` is gitignored and local-only. Set `SOURCE_CHANNEL` in `.env` to tag where postings come from (`wellfound`, `yc`, `linkedin`, `direct`, `other`).
 
 ---
 
@@ -353,8 +389,8 @@ OUTPUT_DIR=output
 
 ### Extending the pipeline
 
-To add a new posting kind (e.g., `internship`):
-1. Add a new `InternshipDetails` model in `job_models.py`
+Three posting kinds are supported: `employment`, `freelance`, and `internship`. To add another:
+1. Add a new details model in `job_models.py`
 2. Update the `PostingDetails` union and discriminator
 3. Add signals to `classifier.py`
 4. Add a Jinja2 template in `renderer.py`

@@ -1,0 +1,312 @@
+"""
+db/store.py
+
+SQLite persistence layer for the job tracker.
+Receives a PostingExtract (validated Pydantic model from JobPostProfiler)
+and writes it to jobs.db.
+
+No LLM dependencies. Pure Python + sqlite3.
+"""
+
+import sqlite3
+import json
+from datetime import date
+from pathlib import Path
+from typing import Optional
+
+# --- Config -----------------------------------------------------------
+
+# Repo root — two levels up from src/jobpostprofiler/db/store.py
+DB_PATH = Path(__file__).resolve().parents[3] / "jobs.db"
+
+VALID_STATUSES = {
+    "found",
+    "applied",
+    "phone_screen",
+    "technical",
+    "offer",
+    "rejected",
+    "ghosted",
+}
+
+# --- Schema -----------------------------------------------------------
+
+SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS jobs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id          TEXT,
+    url             TEXT,
+    title           TEXT,
+    company         TEXT,
+    location        TEXT,
+    remote_policy   TEXT,
+    employment_type TEXT,
+    salary_range    TEXT,
+    required_skills TEXT,       -- JSON array
+    preferred_skills TEXT,      -- JSON array
+    source_channel  TEXT,       -- wellfound | yc | linkedin | direct | other
+    date_found      TEXT,       -- ISO date
+    status          TEXT DEFAULT 'found',
+    qa_passed       INTEGER,    -- 0 or 1
+    qa_issues       TEXT,       -- JSON array
+    jd_text         TEXT,       -- normalized posting text (from fetcher)
+    notes           TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS applications (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id          INTEGER NOT NULL REFERENCES jobs(id),
+    date_applied    TEXT,       -- ISO date
+    resume_used     TEXT,       -- 'ML' | 'SWE' | 'custom'
+    cover_note      TEXT,
+    follow_up_date  TEXT,       -- ISO date
+    notes           TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_status   ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_company  ON jobs(company);
+CREATE INDEX IF NOT EXISTS idx_jobs_date     ON jobs(date_found);
+"""
+
+
+# --- Init -------------------------------------------------------------
+
+def init_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
+    """Create tables if they don't exist. Return open connection."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA_SQL)
+    conn.commit()
+    return conn
+
+
+# --- Field extraction ------------------------------------------------
+#
+# PostingExtract.details is a discriminated union:
+#   kind="employment"  → details.role.job_title, details.company.name,
+#                        details.role.location, details.role.workplace_type,
+#                        details.role.employment_type, details.role.compensation
+#   kind="internship"  → same nested shape as employment
+#   kind="freelance"   → details.title, details.budget / details.hourly_rate,
+#                        details.contract_type  (flat, no role/company sub-objects)
+#
+# This function normalises all three shapes into a flat dict for the DB row.
+
+def _extract_fields(details: dict) -> dict:
+    kind = details.get("kind", "employment")
+
+    if kind in ("employment", "internship"):
+        role    = details.get("role") or {}
+        company = details.get("company") or {}
+        return {
+            "title":            role.get("job_title"),
+            "company":          company.get("name"),
+            "location":         role.get("location"),
+            "remote_policy":    role.get("workplace_type"),
+            "employment_type":  role.get("employment_type"),
+            "salary_range":     role.get("compensation"),
+        }
+
+    # freelance — flat shape
+    return {
+        "title":            details.get("title"),
+        "company":          None,
+        "location":         None,
+        "remote_policy":    None,
+        "employment_type":  details.get("contract_type"),
+        "salary_range":     details.get("budget") or details.get("hourly_rate"),
+    }
+
+
+# --- Insert -----------------------------------------------------------
+
+def save_job_from_extract(
+    extract: dict,
+    qa_report: dict,
+    run_id: str,
+    normalized_text: str = "",
+    source_channel: str = "other",
+    db_path: Path = DB_PATH,
+) -> int:
+    """
+    Insert a job record from a PostingExtract dict (job_extract.json content).
+    Returns the new row id.
+
+    Args:
+        extract:         PostingExtract.model_dump() result
+        qa_report:       QAReport.model_dump() result
+        run_id:          Pipeline run_id (correlation key)
+        normalized_text: Contents of normalized_job_post.txt (optional)
+        source_channel:  wellfound | yc | linkedin | direct | other
+        db_path:         Override for testing
+    """
+    details  = extract.get("details") or {}
+    skills   = extract.get("skills") or {}
+    source   = extract.get("source") or {}
+    fields   = _extract_fields(details)
+
+    row = {
+        "run_id":           run_id,
+        "url":              source.get("url"),
+        "title":            fields["title"],
+        "company":          fields["company"],
+        "location":         fields["location"],
+        "remote_policy":    fields["remote_policy"],
+        "employment_type":  fields["employment_type"],
+        "salary_range":     fields["salary_range"],
+        "required_skills":  json.dumps(skills.get("required") or []),
+        "preferred_skills": json.dumps(skills.get("preferred") or []),
+        "source_channel":   source_channel,
+        "date_found":       date.today().isoformat(),
+        "status":           "found",
+        "qa_passed":        1 if qa_report.get("passed") else 0,
+        "qa_issues":        json.dumps(qa_report.get("issues") or []),
+        "jd_text":          normalized_text,
+        "notes":            None,
+    }
+
+    conn    = init_db(db_path)
+    cursor  = conn.execute(
+        """
+        INSERT INTO jobs (
+            run_id, url, title, company, location, remote_policy,
+            employment_type, salary_range, required_skills, preferred_skills,
+            source_channel, date_found, status, qa_passed, qa_issues, jd_text, notes
+        ) VALUES (
+            :run_id, :url, :title, :company, :location, :remote_policy,
+            :employment_type, :salary_range, :required_skills, :preferred_skills,
+            :source_channel, :date_found, :status, :qa_passed, :qa_issues, :jd_text, :notes
+        )
+        """,
+        row,
+    )
+    conn.commit()
+    job_id = cursor.lastrowid
+    conn.close()
+    print(f"[tracker] Saved → jobs.id={job_id}  {row['company']} | {row['title']}")
+    return job_id
+
+
+def save_job_from_output_dir(
+    output_dir: Path,
+    source_channel: str = "other",
+    db_path: Path = DB_PATH,
+) -> int:
+    """
+    Convenience loader: given a pipeline output/{run_id}/ directory,
+    read the standard output files and call save_job_from_extract().
+    """
+    extract_path = output_dir / "job_extract.json"
+    qa_path      = output_dir / "quality_report.json"
+    norm_path    = output_dir / "normalized_job_post.txt"
+
+    if not extract_path.exists():
+        raise FileNotFoundError(f"job_extract.json not found in {output_dir}")
+
+    extract         = json.loads(extract_path.read_text(encoding="utf-8"))
+    qa_report       = json.loads(qa_path.read_text(encoding="utf-8")) if qa_path.exists() else {}
+    normalized_text = norm_path.read_text(encoding="utf-8") if norm_path.exists() else ""
+    run_id          = output_dir.name
+
+    return save_job_from_extract(
+        extract=extract,
+        qa_report=qa_report,
+        run_id=run_id,
+        normalized_text=normalized_text,
+        source_channel=source_channel,
+        db_path=db_path,
+    )
+
+
+# --- Read -------------------------------------------------------------
+
+def list_jobs(
+    status: Optional[str] = None,
+    db_path: Path = DB_PATH,
+) -> list[dict]:
+    conn = init_db(db_path)
+    if status:
+        rows = conn.execute(
+            "SELECT * FROM jobs WHERE status = ? ORDER BY date_found DESC",
+            (status,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM jobs ORDER BY date_found DESC"
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_job(job_id: int, db_path: Path = DB_PATH) -> Optional[dict]:
+    conn = init_db(db_path)
+    row  = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+# --- Update -----------------------------------------------------------
+
+def update_status(job_id: int, status: str, db_path: Path = DB_PATH) -> None:
+    if status not in VALID_STATUSES:
+        raise ValueError(f"Invalid status '{status}'. Choose from: {VALID_STATUSES}")
+    conn = init_db(db_path)
+    conn.execute("UPDATE jobs SET status = ? WHERE id = ?", (status, job_id))
+    conn.commit()
+    conn.close()
+
+
+def add_application(
+    job_id: int,
+    resume_used: str,
+    cover_note: str = "",
+    follow_up_days: int = 7,
+    notes: str = "",
+    db_path: Path = DB_PATH,
+) -> None:
+    """Log an application. Also flips jobs.status → 'applied'."""
+    applied_date = date.today().isoformat()
+    follow_up    = date.fromordinal(date.today().toordinal() + follow_up_days).isoformat()
+
+    conn = init_db(db_path)
+    conn.execute(
+        """
+        INSERT INTO applications (job_id, date_applied, resume_used, cover_note, follow_up_date, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (job_id, applied_date, resume_used, cover_note, follow_up, notes),
+    )
+    conn.execute("UPDATE jobs SET status = 'applied' WHERE id = ?", (job_id,))
+    conn.commit()
+    conn.close()
+    print(f"[tracker] Applied → job_id={job_id}  resume={resume_used}  follow_up={follow_up}")
+
+
+def update_notes(job_id: int, notes: str, db_path: Path = DB_PATH) -> None:
+    conn = init_db(db_path)
+    conn.execute("UPDATE jobs SET notes = ? WHERE id = ?", (notes, job_id))
+    conn.commit()
+    conn.close()
+
+
+# --- Follow-up helpers ------------------------------------------------
+
+def due_for_followup(db_path: Path = DB_PATH) -> list[dict]:
+    """Return applications whose follow_up_date is today or in the past."""
+    today = date.today().isoformat()
+    conn  = init_db(db_path)
+    rows  = conn.execute(
+        """
+        SELECT a.*, j.title, j.company, j.url
+        FROM applications a
+        JOIN jobs j ON a.job_id = j.id
+        WHERE a.follow_up_date <= ?
+          AND j.status = 'applied'
+        ORDER BY a.follow_up_date ASC
+        """,
+        (today,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

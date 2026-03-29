@@ -1,6 +1,6 @@
 """CENTRALIZED CONFIG"""
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from dotenv import load_dotenv
 
@@ -9,25 +9,26 @@ load_dotenv(override=True)
 
 @dataclass(frozen=True)
 class AppConfig:
-    provider: str = os.getenv("SELECTED_PROVIDER", "OLLAMA")
+    provider:       str       = field(default_factory=lambda: os.getenv("SELECTED_PROVIDER", "OLLAMA"))
+    output_dir:     str       = field(default_factory=lambda: os.getenv("OUTPUT_DIR", "output"))
+    source_channel: str       = field(default_factory=lambda: os.getenv("SOURCE_CHANNEL", "other"))
+    URL:            str|None  = field(init=False, default=None)
+    API_KEY:        str|None  = field(init=False, default=None)
+    MODEL_NAME:     str|None  = field(init=False, default=None)
 
-    API_KEY:    str | None = None
-    URL:        str | None = None
-    MODEL_NAME: str | None = None
-
-    if provider == "OLLAMA":
-        URL        = "http://localhost:11434/v1"
-        API_KEY    = "OLLAMA"
-        MODEL_NAME = os.getenv("OLLAMA_MODEL")
-    elif provider == "OPENROUTER":
-        URL        = "https://openrouter.ai/api/v1"
-        API_KEY    = os.getenv("OPENROUTER_API_KEY")
-        MODEL_NAME = os.getenv("OPENROUTER_MODEL")
-    else:
-        API_KEY    = os.getenv("OPENAI_API_KEY")
-        MODEL_NAME = os.getenv("OPENAI_MODEL")
-
-    output_dir: str = os.getenv("OUTPUT_DIR", "output")
+    def __post_init__(self):
+        if self.provider == "OLLAMA":
+            object.__setattr__(self, "URL",        "http://localhost:11434/v1")
+            object.__setattr__(self, "API_KEY",    "OLLAMA")
+            object.__setattr__(self, "MODEL_NAME", os.getenv("OLLAMA_MODEL"))
+        elif self.provider == "OPENROUTER":
+            object.__setattr__(self, "URL",        "https://openrouter.ai/api/v1")
+            object.__setattr__(self, "API_KEY",    os.getenv("OPENROUTER_API_KEY"))
+            object.__setattr__(self, "MODEL_NAME", os.getenv("OPENROUTER_MODEL"))
+        else:  # OPENAI
+            object.__setattr__(self, "URL",        None)
+            object.__setattr__(self, "API_KEY",    os.getenv("OPENAI_API_KEY"))
+            object.__setattr__(self, "MODEL_NAME", os.getenv("OPENAI_MODEL"))
 
 
 def validate_config(cfg: AppConfig) -> list[str]:

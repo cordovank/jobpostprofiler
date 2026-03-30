@@ -18,12 +18,7 @@ class UIInput:
 
 
 def render_header():
-    st.set_page_config(
-        page_title="Job Post Extractor",
-        page_icon="💼",
-        layout="centered",
-    )
-    st.title("🧾 Job Post Extractor")
+    st.title("💼 Job Post Profiler")
     st.caption("Paste a job URL or the job text → extract structured fields → render a markdown summary.")
 
 
@@ -102,3 +97,65 @@ def render_outputs(
             st.write("Not found.")
         else:
             st.json(qa_json)
+
+
+def render_match_score(match_result) -> None:
+    """Display skill match score card after extraction."""
+    from jobpostprofiler.core.skill_match import MatchResult
+    if not isinstance(match_result, MatchResult):
+        return
+
+    st.subheader(f"Skill Match: {match_result.overall_score:.0%}")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Required Skills", f"{match_result.required_pct:.0%}")
+        if match_result.required_matched:
+            st.caption(f"Matched: {', '.join(match_result.required_matched)}")
+        if match_result.required_missing:
+            st.caption(f"Missing: {', '.join(match_result.required_missing)}")
+    with col2:
+        st.metric("Preferred Skills", f"{match_result.preferred_pct:.0%}")
+        if match_result.preferred_matched:
+            st.caption(f"Matched: {', '.join(match_result.preferred_matched)}")
+        if match_result.preferred_missing:
+            st.caption(f"Missing: {', '.join(match_result.preferred_missing)}")
+
+
+def render_tracker_tab() -> None:
+    """Render the job tracker pipeline view."""
+    from jobpostprofiler.db.store import list_jobs, get_job
+
+    jobs = list_jobs()
+    if not jobs:
+        st.info("No jobs tracked yet. Use the Extractor tab to process a posting.")
+        return
+
+    # Status summary metrics
+    from collections import Counter
+    counts = Counter(j["status"] for j in jobs)
+    cols = st.columns(len(counts))
+    for col, (status, count) in zip(cols, sorted(counts.items())):
+        col.metric(status, count)
+
+    # Jobs table
+    display_cols = ["id", "status", "company", "title", "date_found",
+                    "salary_range", "match_score", "source_channel"]
+    rows = []
+    for j in jobs:
+        row = {c: j.get(c) for c in display_cols}
+        if row.get("match_score") is not None:
+            row["match_score"] = f"{row['match_score']:.0%}"
+        else:
+            row["match_score"] = "—"
+        rows.append(row)
+
+    st.dataframe(rows, width='stretch', hide_index=True)
+
+    # Detail view
+    job_options = {j["id"]: f"[{j['id']}] {j.get('company', '?')} — {j.get('title', '?')}" for j in jobs}
+    selected_id = st.selectbox("View job details", options=list(job_options.keys()),
+                               format_func=lambda x: job_options[x])
+    if selected_id:
+        job = get_job(selected_id)
+        if job:
+            st.json({k: v for k, v in job.items() if v is not None and k != "jd_text"})

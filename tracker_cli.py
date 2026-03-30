@@ -58,11 +58,12 @@ def _fmt_row(j: dict) -> str:
     salary = f"  {j['salary_range']}" if j.get("salary_range") else ""
     remote = f"  {j['remote_policy']}" if j.get("remote_policy") else ""
     qa = "✓" if j.get("qa_passed") else "⚠"
+    match = f"  Match:{j['match_score']:.0%}" if j.get("match_score") is not None else ""
     return (
         f"  [{j['id']:>3}] {emoji} {j['status']:<14} "
         f"{(j.get('company') or 'Unknown'):<25} "
         f"{(j.get('title') or 'Unknown'):<35} "
-        f"{j.get('date_found','')}{salary}{remote}  QA:{qa}"
+        f"{j.get('date_found','')}{salary}{remote}  QA:{qa}{match}"
     )
 
 
@@ -117,6 +118,28 @@ def cmd_show(args):
         print(f"  Required skills: {', '.join(req)}")
     if pref:
         print(f"  Preferred skills:{', '.join(pref)}")
+
+    if job.get("match_score") is not None:
+        print(f"\n  Skill Match:     {job['match_score']:.0%}")
+        # Show breakdown if my_skills.json is available
+        skills_path = Path(__file__).parent / "my_skills.json"
+        if skills_path.exists():
+            user_profile = json.loads(skills_path.read_text(encoding="utf-8"))
+            user_skills = user_profile.get("skills", [])
+            if user_skills:
+                user_set = {s.lower().strip() for s in user_skills}
+                req_hit = [s for s in req if s.lower().strip() in user_set]
+                req_miss = [s for s in req if s.lower().strip() not in user_set]
+                pref_hit = [s for s in pref if s.lower().strip() in user_set]
+                pref_miss = [s for s in pref if s.lower().strip() not in user_set]
+                if req:
+                    print(f"    Required:      {len(req_hit)}/{len(req)}  {', '.join(req_hit) or '—'}")
+                    if req_miss:
+                        print(f"    Missing:       {', '.join(req_miss)}")
+                if pref:
+                    print(f"    Preferred:     {len(pref_hit)}/{len(pref)}  {', '.join(pref_hit) or '—'}")
+                    if pref_miss:
+                        print(f"    Missing:       {', '.join(pref_miss)}")
 
     if job.get("url"):
         print(f"  URL:             {job['url']}")

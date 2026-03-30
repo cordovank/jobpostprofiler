@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     qa_passed       INTEGER,    -- 0 or 1
     qa_issues       TEXT,       -- JSON array
     jd_text         TEXT,       -- normalized posting text (from fetcher)
+    match_score     REAL,       -- 0.0–1.0 skill match score
     notes           TEXT,
     created_at      TEXT DEFAULT (datetime('now'))
 );
@@ -73,12 +74,21 @@ CREATE INDEX IF NOT EXISTS idx_jobs_date     ON jobs(date_found);
 
 # --- Init -------------------------------------------------------------
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Run idempotent migrations for schema additions."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+    if "match_score" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN match_score REAL")
+        conn.commit()
+
+
 def init_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
     """Create tables if they don't exist. Return open connection."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA_SQL)
     conn.commit()
+    _migrate(conn)
     return conn
 
 
@@ -129,6 +139,7 @@ def save_job_from_extract(
     normalized_text: str = "",
     source_channel: str = "other",
     db_path: Path = DB_PATH,
+    match_score: float | None = None,
 ) -> int:
     """
     Insert a job record from a PostingExtract dict (job_extract.json content).
@@ -141,6 +152,7 @@ def save_job_from_extract(
         normalized_text: Contents of normalized_job_post.txt (optional)
         source_channel:  wellfound | yc | linkedin | direct | other
         db_path:         Override for testing
+        match_score:     Skill match score (0.0–1.0), or None if unavailable
     """
     details  = extract.get("details") or {}
     skills   = extract.get("skills") or {}
@@ -163,6 +175,7 @@ def save_job_from_extract(
         "status":           "found",
         "qa_passed":        1 if qa_report.get("passed") else 0,
         "qa_issues":        json.dumps(qa_report.get("issues") or []),
+        "match_score":      match_score,
         "jd_text":          normalized_text,
         "notes":            None,
     }
@@ -173,11 +186,13 @@ def save_job_from_extract(
         INSERT INTO jobs (
             run_id, url, title, company, location, remote_policy,
             employment_type, salary_range, required_skills, preferred_skills,
-            source_channel, date_found, status, qa_passed, qa_issues, jd_text, notes
+            source_channel, date_found, status, qa_passed, qa_issues,
+            match_score, jd_text, notes
         ) VALUES (
             :run_id, :url, :title, :company, :location, :remote_policy,
             :employment_type, :salary_range, :required_skills, :preferred_skills,
-            :source_channel, :date_found, :status, :qa_passed, :qa_issues, :jd_text, :notes
+            :source_channel, :date_found, :status, :qa_passed, :qa_issues,
+            :match_score, :jd_text, :notes
         )
         """,
         row,

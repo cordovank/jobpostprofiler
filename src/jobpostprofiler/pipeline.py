@@ -22,6 +22,7 @@ from jobpostprofiler.config import AppConfig
 from jobpostprofiler.core.fetcher import fetch_and_normalize, FetchResult
 from jobpostprofiler.core.classifier import classify_kind
 from jobpostprofiler.core.renderer import render_markdown
+from jobpostprofiler.core.skill_match import compute_match, MatchResult
 from jobpostprofiler.llm.client import get_client, structured_call
 from jobpostprofiler.llm.prompts import EXTRACTOR_SYSTEM, EXTRACTOR_USER_TEMPLATE, QA_SYSTEM, QA_USER_TEMPLATE
 from jobpostprofiler.models.job_models import PostingExtract, Source
@@ -35,6 +36,7 @@ class PipelineResult:
     qa: QAReport
     run_id: str
     output_dir: Path
+    match_result: MatchResult | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +144,22 @@ def run_pipeline(
     _write(output_dir / "quality_report.json", qa.model_dump_json(indent=2))
 
     # ------------------------------------------------------------------
-    # Step 6: Add tracker
+    # Step 6: Skill match (pure Python, no LLM call)
+    # ------------------------------------------------------------------
+    match_result: MatchResult | None = None
+    skills_path = Path(__file__).resolve().parents[2] / "my_skills.json"
+    if skills_path.exists():
+        user_profile = json.loads(skills_path.read_text(encoding="utf-8"))
+        user_skills = user_profile.get("skills", [])
+        if user_skills:
+            match_result = compute_match(
+                user_skills=user_skills,
+                required_skills=extract.skills.required,
+                preferred_skills=extract.skills.preferred,
+            )
+
+    # ------------------------------------------------------------------
+    # Step 7: Add tracker
     # ------------------------------------------------------------------
     try:
         from jobpostprofiler.db.store import save_job_from_extract
@@ -152,19 +169,19 @@ def run_pipeline(
             run_id=run_id,
             normalized_text=fetch_result.text,
             source_channel=os.getenv("SOURCE_CHANNEL", "other"),
+            match_score=match_result.overall_score if match_result else None,
         )
     except Exception as _tracker_err:
         # Tracker failure never breaks the pipeline
         print(f"[tracker] Warning: could not save to DB — {_tracker_err}")
 
-
-
     return PipelineResult(
-        extract=extract, 
-        markdown=markdown, 
-        qa=qa, 
-        run_id=run_id, 
-        output_dir=output_dir
+        extract=extract,
+        markdown=markdown,
+        qa=qa,
+        run_id=run_id,
+        output_dir=output_dir,
+        match_result=match_result,
     )
 
 

@@ -255,6 +255,16 @@ def search_jobs(query: str, db_path: Path = DB_PATH) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_job_by_url(url: str, db_path: Path = DB_PATH) -> Optional[dict]:
+    """Return the first job matching the given URL, or None."""
+    if not url:
+        return None
+    conn = init_db(db_path)
+    row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def get_job(job_id: int, db_path: Path = DB_PATH) -> Optional[dict]:
     conn = init_db(db_path)
     row  = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()

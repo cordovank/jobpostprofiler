@@ -48,6 +48,7 @@ def run_pipeline(
     cfg: AppConfig | None = None,
     client=None,
     uid: str | None = None,
+    force: bool = False,
 ) -> PipelineResult:
     """
     Full pipeline: fetch → classify → extract → render → qa → write.
@@ -65,6 +66,24 @@ def run_pipeline(
     # ------------------------------------------------------------------
     fetch_result: FetchResult = fetch_and_normalize(url=url, text=text, filepath=filepath)
     _write(output_dir / "normalized_job_post.txt", fetch_result.text)
+
+    # ------------------------------------------------------------------
+    # Duplicate check (before LLM calls to avoid wasted cost)
+    # ------------------------------------------------------------------
+    if not force and fetch_result.url:
+        try:
+            from jobpostprofiler.db.store import get_job_by_url
+            existing = get_job_by_url(fetch_result.url)
+            if existing:
+                raise ValueError(
+                    f"Duplicate: job_id={existing['id']} "
+                    f"({existing.get('company') or 'Unknown'} | {existing.get('title') or 'Unknown'}) "
+                    f"already has this URL. Pass force=True to re-process."
+                )
+        except ValueError:
+            raise
+        except Exception:
+            pass  # DB access failure should not block the pipeline
 
     # ------------------------------------------------------------------
     # Step 2: Classify posting kind (pure Python heuristic)

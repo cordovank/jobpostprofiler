@@ -72,7 +72,8 @@ src/jobpostprofiler/
 ├── core/                  # Pure Python — no LLM, fully testable
 │   ├── fetcher.py         # fetch_and_normalize(): HTTP scrape, Selenium fallback, normalization
 │   ├── classifier.py      # classify_kind(): signal-based heuristic → "employment" | "freelance"
-│   └── renderer.py        # render_markdown(): Jinja2 templates from PostingExtract
+│   ├── renderer.py        # render_markdown(): Jinja2 templates from PostingExtract
+│   └── skill_match.py     # compute_match(): skill scoring (pure Python, no I/O)
 │
 ├── llm/                   # All LLM-touching code, isolated here
 │   ├── client.py          # get_client(), structured_call(), plain_call()
@@ -82,9 +83,13 @@ src/jobpostprofiler/
 │   ├── job_models.py      # PostingExtract, EmploymentDetails, FreelanceDetails, Source, Skills
 │   └── qa_models.py       # QAReport
 │
+├── db/
+│   ├── __init__.py
+│   └── store.py           # SQLite persistence layer (job tracker)
+│
 ├── ui/
-│   ├── app.py             # Streamlit entry point
-│   └── ui_components.py   # render_header(), render_input_panel(), render_outputs()
+│   ├── app.py             # Streamlit entry point (Extractor + Tracker tabs)
+│   └── ui_components.py   # render_header(), render_input_panel(), render_outputs(), render_tracker_tab()
 │
 ├── pipeline.py            # run_pipeline() — orchestrates all steps
 ├── config.py              # AppConfig: provider selection, env vars, validation
@@ -229,6 +234,10 @@ JobPostProfiler/
 │       ├── job_summary.md
 │       └── quality_report.json
 │
+├── tracker_cli.py                   # Job tracker CLI
+├── docs/
+│   └── cli.md                       # Detailed CLI reference
+├── my_skills.example.json           # Template for skill match profile
 ├── .env                             # gitignored
 ├── .env.example
 ├── pyproject.toml
@@ -293,8 +302,10 @@ Uses the example posting in `main.py`. Useful for quick local testing and verify
 
 ### Tests
 
+Run full test suite:
+
 ```bash
-uv run python -m pytest
+uv run python -m pytest -v 2>&1
 ```
 
 Unit tests cover `core/` (no LLM required). Integration tests use a mock client and fixture postings.
@@ -303,37 +314,34 @@ Unit tests cover `core/` (no LLM required). Integration tests use a mock client 
 
 ## Job Tracker
 
-The pipeline automatically saves every extraction to a local SQLite database (`jobs.db` at repo root). A companion CLI lets you manage your job search pipeline from the terminal.
-
-```bash
-# View all tracked jobs (creates jobs.db on first run)
-python tracker_cli.py status
-
-# Filter by status
-python tracker_cli.py status --status applied
-
-# Log an application
-python tracker_cli.py apply <job_id> --resume ML
-
-# Update a job's status
-python tracker_cli.py update <job_id> --status phone_screen
-
-# Add notes to a job
-python tracker_cli.py notes <job_id> "Great team, async culture"
-
-# Check what needs follow-up
-python tracker_cli.py followup
-
-# Export a Markdown summary
-python tracker_cli.py export --out report.md
-
-# Manually load a previous pipeline run
-python tracker_cli.py save output/<run_id>/ --channel wellfound
-```
+The pipeline automatically saves every extraction to a local SQLite database (`jobs.db` at repo root). A companion CLI lets you manage your job search pipeline from the terminal. Duplicate URLs are detected automatically — the pipeline skips LLM calls if a posting has already been processed.
 
 **Status flow:** `found → applied → phone_screen → technical → offer | rejected | ghosted`
 
-`jobs.db` is gitignored and local-only. Set `SOURCE_CHANNEL` in `.env` to tag where postings come from (`wellfound`, `yc`, `linkedin`, `direct`, `other`).
+### CLI Commands
+
+| Command | Description |
+|---|---|
+| `status [--status <value>]` | View job pipeline with summary counts |
+| `show <id> [--full]` | Full detail view for a single job |
+| `search <query>` | Search by title, company, skills, or notes |
+| `apply <id> --resume ML\|SWE\|custom` | Log an application and set follow-up |
+| `update <id> --status <value>` | Move a job forward in the pipeline |
+| `notes <id> "text"` | Save notes on a job |
+| `followup` | Show applications due for follow-up |
+| `export [--out file.md]` | Markdown report for Claude Project |
+| `save <dir> [--channel <value>]` | Load a previous pipeline run into DB |
+
+### Skill Match Scoring
+
+Copy `my_skills.example.json` to `my_skills.json` and list your skills. The pipeline will score every extraction against your profile — no extra LLM calls, pure set intersection. Scores appear in `status`, `show`, and the Streamlit Tracker tab.
+
+```bash
+cp my_skills.example.json my_skills.json
+# Edit my_skills.json with your skills
+```
+
+`jobs.db` and `my_skills.json` are gitignored and local-only. See [docs/cli.md](docs/cli.md) for detailed usage with examples.
 
 ---
 

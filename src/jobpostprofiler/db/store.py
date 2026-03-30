@@ -240,6 +240,21 @@ def list_jobs(
     return [dict(r) for r in rows]
 
 
+def search_jobs(query: str, db_path: Path = DB_PATH) -> list[dict]:
+    """Search jobs by keyword across title, company, notes, and skills."""
+    conn = init_db(db_path)
+    like = f"%{query}%"
+    rows = conn.execute(
+        """SELECT * FROM jobs
+           WHERE title LIKE ? OR company LIKE ? OR notes LIKE ?
+              OR required_skills LIKE ? OR preferred_skills LIKE ?
+           ORDER BY date_found DESC""",
+        (like, like, like, like, like),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def get_job(job_id: int, db_path: Path = DB_PATH) -> Optional[dict]:
     conn = init_db(db_path)
     row  = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()

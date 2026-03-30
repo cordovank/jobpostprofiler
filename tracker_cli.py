@@ -15,6 +15,8 @@ Usage:
     python tracker_cli.py save <output_dir>         # load a run into DB
     python tracker_cli.py save <output_dir> --channel wellfound
     python tracker_cli.py save output/{run_id}/ --channel wellfound
+    python tracker_cli.py show <job_id>                     # full detail view
+    python tracker_cli.py show <job_id> --full              # include full JD text
 """
 
 import argparse
@@ -33,6 +35,7 @@ from jobpostprofiler.db.store import (
     get_job,
     init_db,
     list_jobs,
+    search_jobs,
     save_job_from_output_dir,
     update_notes,
     update_status,
@@ -77,6 +80,76 @@ def cmd_status(args):
     print(f"\n{'='*90}")
     print(f"  JOB TRACKER  —  {date.today()}  —  {len(jobs)} total")
     print(f"  " + "  ".join(f"{k}:{v}" for k, v in sorted(counts.items())))
+    print(f"{'='*90}")
+    for j in jobs:
+        print(_fmt_row(j))
+    print(f"{'='*90}\n")
+
+
+def cmd_show(args):
+    """Display full details for a single job."""
+    job = get_job(args.job_id)
+    if not job:
+        print(f"Job id={args.job_id} not found.")
+        return
+
+    emoji = STATUS_EMOJI.get(job["status"], "•")
+    print(f"\n{'='*70}")
+    print(f"  {emoji} Job #{job['id']}  —  {job.get('title') or 'Unknown'}")
+    print(f"{'='*70}")
+    print(f"  Company:         {job.get('company') or 'Unknown'}")
+    print(f"  Location:        {job.get('location') or 'Not stated'}")
+    print(f"  Remote policy:   {job.get('remote_policy') or 'Not stated'}")
+    print(f"  Employment type: {job.get('employment_type') or 'Not stated'}")
+    print(f"  Salary range:    {job.get('salary_range') or 'Not stated'}")
+    print(f"  Status:          {job['status']}")
+    print(f"  Date found:      {job.get('date_found', '')}")
+    print(f"  Source channel:  {job.get('source_channel', '')}")
+    print(f"  QA passed:       {'✓' if job.get('qa_passed') else '⚠'}")
+
+    qa_issues = json.loads(job.get("qa_issues") or "[]")
+    if qa_issues:
+        print(f"  QA issues:       {', '.join(qa_issues)}")
+
+    req = json.loads(job.get("required_skills") or "[]")
+    pref = json.loads(job.get("preferred_skills") or "[]")
+    if req:
+        print(f"  Required skills: {', '.join(req)}")
+    if pref:
+        print(f"  Preferred skills:{', '.join(pref)}")
+
+    if job.get("url"):
+        print(f"  URL:             {job['url']}")
+
+    if job.get("notes"):
+        print(f"\n  Notes: {job['notes']}")
+
+    if args.full and job.get("jd_text"):
+        print(f"\n{'─'*70}")
+        print("  JD Text:\n")
+        for line in job["jd_text"].splitlines():
+            print(f"    {line}")
+    elif job.get("jd_text"):
+        preview = job["jd_text"][:500]
+        print(f"\n{'─'*70}")
+        print(f"  JD Preview (first 500 chars):\n")
+        for line in preview.splitlines():
+            print(f"    {line}")
+        if len(job["jd_text"]) > 500:
+            print(f"\n    ... ({len(job['jd_text'])} chars total — use --full to see all)")
+
+    print(f"{'='*70}\n")
+
+
+def cmd_search(args):
+    """Search jobs by keyword across title, company, notes, and skills."""
+    jobs = search_jobs(args.query)
+    if not jobs:
+        print(f"No jobs matching '{args.query}'.")
+        return
+
+    print(f"\n{'='*90}")
+    print(f"  SEARCH: '{args.query}'  —  {len(jobs)} result(s)")
     print(f"{'='*90}")
     for j in jobs:
         print(_fmt_row(j))
@@ -214,6 +287,15 @@ def build_parser() -> argparse.ArgumentParser:
         "found","applied","phone_screen","technical","offer","rejected","ghosted"
     ], default=None)
 
+    # search
+    p_search = sub.add_parser("search", help="Search jobs by keyword")
+    p_search.add_argument("query", help="Search term (matches title, company, notes, skills)")
+
+    # show
+    p_show = sub.add_parser("show", help="Show full details for a job")
+    p_show.add_argument("job_id", type=int)
+    p_show.add_argument("--full", action="store_true", help="Show full JD text")
+
     # apply
     p_apply = sub.add_parser("apply", help="Log an application")
     p_apply.add_argument("job_id", type=int)
@@ -258,6 +340,8 @@ def main():
 
     dispatch = {
         "status":   cmd_status,
+        "search":   cmd_search,
+        "show":     cmd_show,
         "apply":    cmd_apply,
         "update":   cmd_update,
         "notes":    cmd_notes,

@@ -50,8 +50,37 @@ class FetchResult:
     method: str                   # "scrape" | "selenium" | "text" | "file"
     url: str | None = None
     file_path: str | None = None
+    source_platform: str | None = None
     signals_triggered: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+
+
+# ---- Platform inference from URL -------------------------------------------
+
+_PLATFORM_MAP = [
+    ("adzuna.com", "adzuna"),
+    ("linkedin.com", "linkedin"),
+    ("wellfound.com", "wellfound"),
+    ("greenhouse.io", "greenhouse"),
+    ("lever.co", "lever"),
+    ("jobs.ashbyhq.com", "ashby"),
+    ("ashbyhq.com", "ashby"),
+    ("ycombinator.com", "yc"),
+    ("workday.com", "workday"),
+    ("smartrecruiters.com", "smartrecruiters"),
+    ("icims.com", "icims"),
+]
+
+
+def _infer_platform(url: str | None) -> str | None:
+    """Infer source platform from URL domain. Returns None if unrecognized."""
+    if not url:
+        return None
+    lower = url.lower()
+    for domain, platform in _PLATFORM_MAP:
+        if domain in lower:
+            return platform
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +157,7 @@ def _from_url(url: str) -> FetchResult:
         input_type="url",
         method=method,
         url=url,
+        source_platform=_infer_platform(url),
         signals_triggered=signals,
         warnings=warnings,
     )

@@ -129,11 +129,24 @@ class Skills(BaseModel):
 
     required: List[str] = Field(
         default_factory=list,
-        description="Skills explicitly required / must-have. Short items only (e.g. 'Python', 'AWS').",
+        description=(
+            "Short technology/tool/language labels extracted from REQUIRED content. "
+            "1–3 words per label. Examples: 'Python', 'PyTorch', 'RAG', 'Docker', 'SQL'. "
+            "Populated by scanning the entire posting — header highlight blocks, "
+            "Skills sections, Requirements, and responsibilities bullets. "
+            "NEVER full sentences. NEVER empty if any technologies are named in the posting."
+        ),
     )
     preferred: List[str] = Field(
         default_factory=list,
-        description="Skills explicitly preferred / nice-to-have. Short items only.",
+        description=(
+            "Short technology/tool/language labels extracted from PREFERRED or "
+            "qualifier-marked content only. Use when the posting uses: 'preferably', "
+            "'ideally', 'a plus', 'is a plus', 'nice to have', 'bonus', 'preferred', "
+            "'desired', 'helpful', 'familiarity with', 'exposure to'. "
+            "1–3 words per label. Examples: 'Azure', 'C#', 'MLflow', 'LangGraph'. "
+            "NEVER duplicate items from skills.required."
+        ),
     )
 
 
@@ -181,7 +194,7 @@ class PostingExtract(BaseModel):
             return data
 
         # 1. Coerce null top-level list fields to []
-        for field in ("responsibilities", "requirements", "preferred_qualifications", "benefits", "warnings"):
+        for field in ("responsibilities", "requirements", "preferred_qualifications", "benefits", "soft_skills", "warnings"):
             if data.get(field) is None:
                 data[field] = []
 
@@ -224,17 +237,58 @@ class PostingExtract(BaseModel):
     )
     requirements: List[str] = Field(
         default_factory=list,
-        description="Mandatory requirements only ('must', 'required', 'minimum qualifications').",
+        description=(
+            "Full-sentence mandatory qualifications from the posting. "
+            "Use for: education requirements, years of experience, certifications, "
+            "and technical competencies stated as required/must-have. "
+            "These are complete readable statements, not short labels. "
+            "Example: 'Bachelor degree in Computer Science or related field.' "
+            "Example: '3+ years of experience building ML pipelines in Python.' "
+            "NEVER place soft skills or behavioral traits here. "
+            "NEVER place preferred/plus-qualified items here."
+        ),
     )
     preferred_qualifications: List[str] = Field(
         default_factory=list,
-        description="Preferred / nice-to-have qualifications only ('preferred', 'bonus', 'nice to have').",
+        description=(
+            "Full-sentence preferred or nice-to-have qualifications from the posting. "
+            "Use for: education, experience, or background items marked with "
+            "'preferred', 'ideally', 'a plus', 'nice to have', 'bonus', or 'desired'. "
+            "These are complete readable statements, not short labels. "
+            "Example: 'Master degree preferred.' "
+            "Example: '3+ years with RAG systems is a plus.' "
+            "Example: 'Prior experience in a regulated industry preferred.' "
+            "NEVER duplicate items from requirements[]. "
+            "NEVER place short skill labels here — those go in skills.preferred[]."
+        ),
     )
     benefits: List[str] = Field(
         default_factory=list,
         description="Benefits and perks if stated.",
     )
-    skills: Skills = Field(default_factory=Skills)
+    skills: Skills = Field(
+        default_factory=Skills,
+        description=(
+            "Machine-readable skill tag layer. Short labels only (1–3 words). "
+            "Distilled from requirements[] → skills.required, "
+            "and preferred_qualifications[] → skills.preferred. "
+            "Purpose: keyword matching, filtering, and cross-posting comparison. "
+            "Not for human reading — use requirements[] and preferred_qualifications[] for that."
+        ),
+    )
+    soft_skills: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Behavioral, interpersonal, and non-technical competencies listed in the posting. "
+            "Includes content from 'Soft Skills' sections, communication traits, "
+            "collaboration expectations, and problem-solving or adaptability mentions. "
+            "Short phrases only. Examples: 'cross-functional collaboration', "
+            "'communication clarity', 'adaptability', 'technical mentoring'. "
+            "NEVER place these in requirements[], preferred_qualifications[], "
+            "or skills.required[]/skills.preferred[]. "
+            "Defaults to [] if the posting has no soft skills content."
+        ),
+    )
     warnings: List[str] = Field(
         default_factory=list,
         description="Extraction warnings: missing fields, ambiguous content, blocked pages, etc.",

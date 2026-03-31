@@ -96,11 +96,13 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # Step 3: Extract structured fields — LLM call #1
     # ------------------------------------------------------------------
+    extracted_at = datetime.now().strftime("%d %b %Y").lstrip("0")
     source = Source(
-        extracted_at=run_id,
+        extracted_at=extracted_at,
         input_type=fetch_result.input_type if fetch_result.input_type in ("url", "text") else "text",
         url=fetch_result.url,
         file_path=fetch_result.file_path or str(output_dir / "normalized_job_post.txt"),
+        source_platform=fetch_result.source_platform,
     )
 
     user_msg = EXTRACTOR_USER_TEMPLATE.format(

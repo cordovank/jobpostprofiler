@@ -18,72 +18,86 @@ from jobpostprofiler.models.job_models import PostingExtract
 EMPLOYMENT_TEMPLATE = """\
 # {{ title_line }}
 
-## Role Details
+## At a Glance
 | Field | Value |
 |---|---|
-| Job Title | {{ role.job_title or "Not stated" }} |
+| Role | {{ role.job_title or "Not stated" }} |
 | Seniority | {{ role.seniority or "Not stated" }} |
-| Team | {{ role.team or "Not stated" }} |
 | Location | {{ role.location or "Not stated" }} |
-| Workplace Type | {{ role.workplace_type or "Not stated" }} |
+| Workplace | {{ role.workplace_type or "Not stated" }} |
 | Employment Type | {{ role.employment_type or "Not stated" }} |
 | Compensation | {{ role.compensation or "Not stated" }} |
-| Visa Sponsorship | {{ role.visa_sponsorship or "Not stated" }} |
-
-## Company
-| Field | Value |
-|---|---|
-| Name | {{ company.name or "Not stated" }} |
-| Industry | {{ company.industry or "Not stated" }} |
-| Size | {{ company.company_size or "Not stated" }} |
-| HQ | {{ company.headquarters or "Not stated" }} |
-
-{% if company.description %}
-**About:** {{ company.description }}
+{% if role.visa_sponsorship %}
+| Visa Sponsorship | {{ role.visa_sponsorship }} |
 {% endif %}
 
-## Responsibilities
+{% if company.description %}
+## About {{ company.name or "the Company" }}
+{{ company.description }}
+{% if company.industry or company.company_size or company.headquarters %}
+*{% if company.industry %}Industry: {{ company.industry }}{% endif %}{% if company.company_size %}  · Size: {{ company.company_size }}{% endif %}{% if company.headquarters %}  · HQ: {{ company.headquarters }}{% endif %}*
+{% endif %}
+{% endif %}
+
+## Required Skills
+{% if skills.required %}
+{{ skills.required | join(" · ") }}
+{% else %}
+Not specified
+{% endif %}
+
+{% if skills.preferred %}
+## Preferred Skills
+{{ skills.preferred | join(" · ") }}
+{% endif %}
+
+## What You'll Do
 {% for r in responsibilities %}
 - {{ r }}
 {% else %}
 - Not stated
 {% endfor %}
 
-## Requirements
+## What They're Looking For
+
+### Must Have
 {% for r in requirements %}
 - {{ r }}
 {% else %}
 - Not stated
 {% endfor %}
 
-## Preferred Qualifications
+{% if preferred_qualifications %}
+### Nice to Have
 {% for r in preferred_qualifications %}
 - {{ r }}
-{% else %}
-- Not stated
 {% endfor %}
+{% endif %}
 
-## Skills
-**Required:** {% if skills.required %}{{ skills.required | join(", ") }}{% else %}Not stated{% endif %}
+{% if soft_skills %}
+## Soft Skills
+{% for s in soft_skills %}
+- {{ s }}
+{% endfor %}
+{% endif %}
 
-**Preferred:** {% if skills.preferred %}{{ skills.preferred | join(", ") }}{% else %}Not stated{% endif %}
-
+{% if benefits %}
 ## Benefits
 {% for b in benefits %}
 - {{ b }}
-{% else %}
-- Not stated
 {% endfor %}
+{% endif %}
 
 {% if warnings %}
-## ⚠️ Extraction Warnings
+## Extraction Notes
+The following fields were absent from the posting:
 {% for w in warnings %}
 - {{ w }}
 {% endfor %}
 {% endif %}
 
 ---
-*Extracted from: {{ source.ref }}*
+*Source: {{ source.ref }}  ·  Extracted: {{ source.extracted_at }}*
 """
 
 FREELANCE_TEMPLATE = """\
@@ -137,103 +151,134 @@ FREELANCE_TEMPLATE = """\
 {% endif %}
 
 {% if warnings %}
-## ⚠️ Extraction Warnings
+## Extraction Notes
+The following fields were absent from the posting:
 {% for w in warnings %}
 - {{ w }}
 {% endfor %}
 {% endif %}
 
 ---
-*Extracted from: {{ source.ref }}*
+*Source: {{ source.ref }}  ·  Extracted: {{ source.extracted_at }}*
 """
 
 INTERNSHIP_TEMPLATE = """\
-# {{ title_line }}
+# {{ title_line }}  [Internship]
 
-## Role Details
+## At a Glance
 | Field | Value |
 |---|---|
-| Job Title | {{ role.job_title or "Not stated" }} |
-| Seniority | {{ role.seniority or "Not stated" }} |
-| Team | {{ role.team or "Not stated" }} |
+| Role | {{ role.job_title or "Not stated" }} |
+{% if details.academic_level %}
+| Academic Level | {{ details.academic_level }} |
+{% endif %}
 | Location | {{ role.location or "Not stated" }} |
-| Workplace Type | {{ role.workplace_type or "Not stated" }} |
-| Compensation | {{ role.compensation or "Not stated" }} |
-| Visa Sponsorship | {{ role.visa_sponsorship or "Not stated" }} |
-
-## Company
-| Field | Value |
-|---|---|
-| Name | {{ company.name or "Not stated" }} |
-| Industry | {{ company.industry or "Not stated" }} |
-| Size | {{ company.company_size or "Not stated" }} |
-| HQ | {{ company.headquarters or "Not stated" }} |
-
-{% if company.description %}
-**About:** {{ company.description }}
+{% if role.workplace_type %}
+| Workplace | {{ role.workplace_type }} |
+{% endif %}
+{% if details.duration %}
+| Duration | {{ details.duration }} |
+{% endif %}
+{% if details.start_date %}
+| Start Date | {{ details.start_date }} |
+{% endif %}
+{% if details.end_date %}
+| End Date | {{ details.end_date }} |
+{% endif %}
+| Compensation / Stipend | {{ role.compensation or details.stipend or "Not stated" }} |
+{% if details.housing_provided is not none %}
+| Housing | {{ details.housing_provided }} |
+{% endif %}
+{% if details.relocation_assistance is not none %}
+| Relocation | {{ details.relocation_assistance }} |
+{% endif %}
+{% if details.mentorship_provided is not none %}
+| Mentorship | {{ details.mentorship_provided }} |
+{% endif %}
+{% if details.return_offer_potential is not none %}
+| Return Offer Potential | {{ details.return_offer_potential }} |
 {% endif %}
 
-## Internship Details
-| Field | Value |
-|---|---|
-| Duration | {{ details.duration or "Not stated" }} |
-| Start Date | {{ details.start_date or "Not stated" }} |
-| End Date | {{ details.end_date or "Not stated" }} |
-| Stipend | {{ details.stipend or "Not stated" }} |
-| Housing Provided | {{ details.housing_provided if details.housing_provided is not none else "Not stated" }} |
-| Relocation Assistance | {{ details.relocation_assistance if details.relocation_assistance is not none else "Not stated" }} |
-| Mentorship | {{ details.mentorship_provided if details.mentorship_provided is not none else "Not stated" }} |
-| Return Offer Potential | {{ details.return_offer_potential if details.return_offer_potential is not none else "Not stated" }} |
+{% if company.description %}
+## About {{ company.name or "the Company" }}
+{{ company.description }}
+{% if company.industry or company.company_size or company.headquarters %}
+*{% if company.industry %}Industry: {{ company.industry }}{% endif %}{% if company.company_size %}  · Size: {{ company.company_size }}{% endif %}{% if company.headquarters %}  · HQ: {{ company.headquarters }}{% endif %}*
+{% endif %}
+{% endif %}
 
-## Academic Requirements
-| Field | Value |
-|---|---|
-| Academic Level | {{ details.academic_level or "Not stated" }} |
-| Field of Study | {{ details.field_of_study or "Not stated" }} |
-| GPA Requirement | {{ details.gpa_requirement or "Not stated" }} |
+## Required Skills
+{% if skills.required %}
+{{ skills.required | join(" · ") }}
+{% else %}
+Not specified
+{% endif %}
 
-## Responsibilities
+{% if skills.preferred %}
+## Preferred Skills
+{{ skills.preferred | join(" · ") }}
+{% endif %}
+
+## What You'll Do
 {% for r in responsibilities %}
 - {{ r }}
 {% else %}
 - Not stated
 {% endfor %}
 
-## Requirements
+## What They're Looking For
+
+### Must Have
 {% for r in requirements %}
 - {{ r }}
 {% else %}
 - Not stated
 {% endfor %}
 
-## Preferred Qualifications
+{% if preferred_qualifications %}
+### Nice to Have
 {% for r in preferred_qualifications %}
 - {{ r }}
-{% else %}
-- Not stated
 {% endfor %}
+{% endif %}
 
-## Skills
-**Required:** {% if skills.required %}{{ skills.required | join(", ") }}{% else %}Not stated{% endif %}
+{% if soft_skills %}
+## Soft Skills
+{% for s in soft_skills %}
+- {{ s }}
+{% endfor %}
+{% endif %}
 
-**Preferred:** {% if skills.preferred %}{{ skills.preferred | join(", ") }}{% else %}Not stated{% endif %}
+{% if details.academic_level or details.field_of_study or details.gpa_requirement %}
+## Academic Requirements
+{% if details.academic_level %}
+- Academic Level: {{ details.academic_level }}
+{% endif %}
+{% if details.field_of_study %}
+- Field of Study: {{ details.field_of_study }}
+{% endif %}
+{% if details.gpa_requirement %}
+- GPA Requirement: {{ details.gpa_requirement }}
+{% endif %}
+{% endif %}
 
+{% if benefits %}
 ## Benefits
 {% for b in benefits %}
 - {{ b }}
-{% else %}
-- Not stated
 {% endfor %}
+{% endif %}
 
 {% if warnings %}
-## ⚠️ Extraction Warnings
+## Extraction Notes
+The following fields were absent from the posting:
 {% for w in warnings %}
 - {{ w }}
 {% endfor %}
 {% endif %}
 
 ---
-*Extracted from: {{ source.ref }}*
+*Source: {{ source.ref }}  ·  Extracted: {{ source.extracted_at }}*
 """
 
 
@@ -283,5 +328,6 @@ def render_markdown(extract: PostingExtract) -> str:
         preferred_qualifications=extract.preferred_qualifications,
         benefits=extract.benefits,
         skills=extract.skills,
+        soft_skills=extract.soft_skills,
         warnings=extract.warnings,
     )

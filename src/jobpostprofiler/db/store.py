@@ -331,6 +331,42 @@ def update_notes(job_id: int, notes: str, db_path: Path = DB_PATH) -> None:
     conn.close()
 
 
+# Columns that can be edited via update_job()
+EDITABLE_FIELDS = {
+    "title", "company", "location", "remote_policy",
+    "employment_type", "salary_range", "status", "notes",
+    "source_channel",
+}
+
+
+def update_job(job_id: int, db_path: Path = DB_PATH, **fields) -> bool:
+    """Update one or more editable fields on a job record. Returns True if a row was updated."""
+    to_set = {k: v for k, v in fields.items() if k in EDITABLE_FIELDS}
+    if not to_set:
+        return False
+    if "status" in to_set and to_set["status"] not in VALID_STATUSES:
+        raise ValueError(f"Invalid status '{to_set['status']}'. Choose from: {VALID_STATUSES}")
+    set_clause = ", ".join(f"{col} = ?" for col in to_set)
+    values = list(to_set.values()) + [job_id]
+    conn = init_db(db_path)
+    cursor = conn.execute(f"UPDATE jobs SET {set_clause} WHERE id = ?", values)
+    conn.commit()
+    updated = cursor.rowcount > 0
+    conn.close()
+    return updated
+
+
+def delete_job(job_id: int, db_path: Path = DB_PATH) -> bool:
+    """Delete a job and its applications. Returns True if a row was deleted."""
+    conn = init_db(db_path)
+    conn.execute("DELETE FROM applications WHERE job_id = ?", (job_id,))
+    cursor = conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+    conn.commit()
+    deleted = cursor.rowcount > 0
+    conn.close()
+    return deleted
+
+
 # --- Follow-up helpers ------------------------------------------------
 
 def due_for_followup(db_path: Path = DB_PATH) -> list[dict]:

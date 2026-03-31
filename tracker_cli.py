@@ -17,6 +17,9 @@ Usage:
     python tracker_cli.py save output/{run_id}/ --channel wellfound
     python tracker_cli.py show <job_id>                     # full detail view
     python tracker_cli.py show <job_id> --full              # include full JD text
+    python tracker_cli.py edit <job_id> --title "New Title" --salary "$120K"
+    python tracker_cli.py delete <job_id>                   # with confirmation
+    python tracker_cli.py delete <job_id> -y                # skip confirmation
 """
 
 import argparse
@@ -30,13 +33,16 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from jobpostprofiler.db.store import (
     DB_PATH,
+    EDITABLE_FIELDS,
     add_application,
+    delete_job,
     due_for_followup,
     get_job,
     init_db,
     list_jobs,
     search_jobs,
     save_job_from_output_dir,
+    update_job,
     update_notes,
     update_status,
 )
@@ -295,6 +301,46 @@ def cmd_save(args):
     print(f"  → To log an application: python tracker_cli.py apply {job_id} --resume ML")
 
 
+def cmd_delete(args):
+    """Delete a job record and its applications."""
+    job = get_job(args.job_id)
+    if not job:
+        print(f"Job id={args.job_id} not found.")
+        return
+    label = f"{job.get('company') or 'Unknown'} | {job.get('title') or 'Unknown'}"
+    if not args.yes:
+        confirm = input(f"  Delete [{args.job_id}] {label}? (y/N): ").strip().lower()
+        if confirm != "y":
+            print("  Cancelled.")
+            return
+    if delete_job(args.job_id):
+        print(f"  ✓ Deleted job_id={args.job_id}  ({label})")
+    else:
+        print(f"  ✗ Failed to delete job_id={args.job_id}")
+
+
+def cmd_edit(args):
+    """Edit fields on a job record."""
+    job = get_job(args.job_id)
+    if not job:
+        print(f"Job id={args.job_id} not found.")
+        return
+    fields = {}
+    for f in EDITABLE_FIELDS:
+        val = getattr(args, f, None)
+        if val is not None:
+            fields[f] = val
+    if not fields:
+        print(f"  No fields to update. Use flags like --title, --company, --status, etc.")
+        return
+    if update_job(args.job_id, **fields):
+        print(f"  ✓ Updated job_id={args.job_id}:")
+        for k, v in fields.items():
+            print(f"    {k} → {v}")
+    else:
+        print(f"  ✗ No changes made.")
+
+
 # ── Argument parser ───────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -354,6 +400,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_save.add_argument("--channel", default="other",
                         choices=["wellfound","yc","linkedin","direct","other"])
 
+    # delete
+    p_delete = sub.add_parser("delete", help="Delete a job record")
+    p_delete.add_argument("job_id", type=int)
+    p_delete.add_argument("-y", "--yes", action="store_true",
+                          help="Skip confirmation prompt")
+
+    # edit
+    p_edit = sub.add_parser("edit", help="Edit fields on a job record")
+    p_edit.add_argument("job_id", type=int)
+    p_edit.add_argument("--title", default=None)
+    p_edit.add_argument("--company", default=None)
+    p_edit.add_argument("--location", default=None)
+    p_edit.add_argument("--remote-policy", dest="remote_policy", default=None)
+    p_edit.add_argument("--employment-type", dest="employment_type", default=None)
+    p_edit.add_argument("--salary", dest="salary_range", default=None)
+    p_edit.add_argument("--status", default=None, choices=[
+        "found","applied","phone_screen","technical","offer","rejected","ghosted"
+    ])
+    p_edit.add_argument("--notes", default=None)
+    p_edit.add_argument("--channel", dest="source_channel", default=None,
+                        choices=["wellfound","yc","linkedin","direct","other"])
+
     return parser
 
 
@@ -371,6 +439,8 @@ def main():
         "followup": cmd_followup,
         "export":   cmd_export,
         "save":     cmd_save,
+        "delete":   cmd_delete,
+        "edit":     cmd_edit,
     }
     dispatch[args.command](args)
 

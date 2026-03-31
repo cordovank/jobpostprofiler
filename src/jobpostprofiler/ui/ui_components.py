@@ -123,7 +123,7 @@ def render_match_score(match_result) -> None:
 
 def render_tracker_tab() -> None:
     """Render the job tracker pipeline view."""
-    from jobpostprofiler.db.store import list_jobs, get_job
+    from jobpostprofiler.db.store import list_jobs, get_job, update_job, delete_job, VALID_STATUSES
 
     jobs = list_jobs()
     if not jobs:
@@ -155,7 +155,75 @@ def render_tracker_tab() -> None:
     job_options = {j["id"]: f"[{j['id']}] {j.get('company', '?')} — {j.get('title', '?')}" for j in jobs}
     selected_id = st.selectbox("View job details", options=list(job_options.keys()),
                                format_func=lambda x: job_options[x])
-    if selected_id:
-        job = get_job(selected_id)
-        if job:
-            st.json({k: v for k, v in job.items() if v is not None and k != "jd_text"})
+    if not selected_id:
+        return
+
+    job = get_job(selected_id)
+    if not job:
+        return
+
+    # Raw detail view
+    with st.expander("Raw JSON", expanded=False):
+        st.json({k: v for k, v in job.items() if v is not None and k != "jd_text"})
+
+    # Edit form
+    st.markdown("#### Edit Job")
+    with st.form(key=f"edit_job_{selected_id}"):
+        statuses = sorted(VALID_STATUSES)
+        current_status_idx = statuses.index(job["status"]) if job["status"] in statuses else 0
+
+        col1, col2 = st.columns(2)
+        with col1:
+            new_title = st.text_input("Title", value=job.get("title") or "")
+            new_company = st.text_input("Company", value=job.get("company") or "")
+            new_location = st.text_input("Location", value=job.get("location") or "")
+            new_salary = st.text_input("Salary Range", value=job.get("salary_range") or "")
+        with col2:
+            new_status = st.selectbox("Status", options=statuses, index=current_status_idx)
+            new_remote = st.text_input("Remote Policy", value=job.get("remote_policy") or "")
+            new_emp_type = st.text_input("Employment Type", value=job.get("employment_type") or "")
+            new_channel = st.selectbox(
+                "Source Channel",
+                options=["wellfound", "yc", "linkedin", "direct", "other"],
+                index=["wellfound", "yc", "linkedin", "direct", "other"].index(
+                    job.get("source_channel") or "other"
+                ),
+            )
+        new_notes = st.text_area("Notes", value=job.get("notes") or "")
+
+        if st.form_submit_button("Save Changes"):
+            fields = {}
+            if new_title != (job.get("title") or ""):
+                fields["title"] = new_title
+            if new_company != (job.get("company") or ""):
+                fields["company"] = new_company
+            if new_location != (job.get("location") or ""):
+                fields["location"] = new_location
+            if new_salary != (job.get("salary_range") or ""):
+                fields["salary_range"] = new_salary
+            if new_status != job["status"]:
+                fields["status"] = new_status
+            if new_remote != (job.get("remote_policy") or ""):
+                fields["remote_policy"] = new_remote
+            if new_emp_type != (job.get("employment_type") or ""):
+                fields["employment_type"] = new_emp_type
+            if new_channel != (job.get("source_channel") or "other"):
+                fields["source_channel"] = new_channel
+            if new_notes != (job.get("notes") or ""):
+                fields["notes"] = new_notes
+
+            if fields:
+                update_job(selected_id, **fields)
+                st.success(f"Updated: {', '.join(fields.keys())}")
+                st.rerun()
+            else:
+                st.info("No changes detected.")
+
+    # Delete action
+    st.markdown("#### Delete Job")
+    with st.expander("Danger zone", expanded=False):
+        st.warning(f"This will permanently delete job #{selected_id} and any linked applications.")
+        if st.button("Delete this job", type="primary", key=f"del_{selected_id}"):
+            delete_job(selected_id)
+            st.success(f"Deleted job #{selected_id}.")
+            st.rerun()

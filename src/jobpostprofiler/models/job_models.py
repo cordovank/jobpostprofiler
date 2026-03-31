@@ -193,6 +193,13 @@ class PostingExtract(BaseModel):
         if not isinstance(data, dict):
             return data
 
+        # 0. Strip computed fields the LLM may echo back
+        #    (extra="forbid" would reject these as unknown inputs)
+        data.pop("posting_kind", None)
+        source = data.get("source")
+        if isinstance(source, dict):
+            source.pop("ref", None)
+
         # 1. Coerce null top-level list fields to []
         for field in ("responsibilities", "requirements", "preferred_qualifications", "benefits", "soft_skills", "warnings"):
             if data.get(field) is None:

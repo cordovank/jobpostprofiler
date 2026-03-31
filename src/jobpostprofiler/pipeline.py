@@ -109,7 +109,9 @@ def run_pipeline(
         kind=kind, 
         text=fetch_result.text
     )
-    user_msg += f"\n\nSource metadata:\n{source.model_dump_json(indent=2)}"
+    # Exclude computed field 'ref' so the LLM doesn't echo it back
+    source_json = source.model_dump_json(indent=2, exclude={"ref"})
+    user_msg += f"\n\nSource metadata:\n{source_json}"
 
     extract: PostingExtract = structured_call(
         client=client, 

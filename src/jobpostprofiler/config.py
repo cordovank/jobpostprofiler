@@ -12,6 +12,7 @@ class AppConfig:
     provider:       str       = field(default_factory=lambda: os.getenv("SELECTED_PROVIDER", "OLLAMA"))
     output_dir:     str       = field(default_factory=lambda: os.getenv("OUTPUT_DIR", "output"))
     source_channel: str       = field(default_factory=lambda: os.getenv("SOURCE_CHANNEL", "other"))
+    model_override: str|None  = None
     URL:            str|None  = field(init=False, default=None)
     API_KEY:        str|None  = field(init=False, default=None)
     MODEL_NAME:     str|None  = field(init=False, default=None)
@@ -29,6 +30,9 @@ class AppConfig:
             object.__setattr__(self, "URL",        None)
             object.__setattr__(self, "API_KEY",    os.getenv("OPENAI_API_KEY"))
             object.__setattr__(self, "MODEL_NAME", os.getenv("OPENAI_MODEL"))
+
+        if self.model_override:
+            object.__setattr__(self, "MODEL_NAME", self.model_override)
 
 
 def validate_config(cfg: AppConfig) -> list[str]:

@@ -18,7 +18,7 @@ from jobpostprofiler.ui.ui_components import (
 )
 
 
-cfg = AppConfig()
+_base_cfg = AppConfig()
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +32,23 @@ st.set_page_config(
 )
 
 render_header()
+
+# ---------------------------------------------------------------------------
+# Model selector (sidebar)
+# ---------------------------------------------------------------------------
+
+with st.sidebar:
+    st.subheader("Model")
+    model_input = st.text_input(
+        "LLM model name",
+        value=_base_cfg.MODEL_NAME or "",
+        help="Override the model from .env. Leave blank to use the default.",
+    )
+    st.caption(f"Provider: `{_base_cfg.provider}`")
+
+# Build effective config — override model only if user changed it
+_override = model_input.strip() if model_input.strip() != (_base_cfg.MODEL_NAME or "") else None
+cfg = AppConfig(model_override=_override) if _override else _base_cfg
 
 for w in validate_config(cfg):
     st.warning(w)

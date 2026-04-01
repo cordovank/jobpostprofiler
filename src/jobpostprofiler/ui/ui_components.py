@@ -18,29 +18,38 @@ class UIInput:
 
 
 def render_header():
-    st.title("💼 Job Post Profiler")
-    st.caption("Paste a job URL or the job text → extract structured fields → render a markdown summary.")
+    st.title("Profiler")
+    st.html('<p class="profiler-subtitle">Extract · Evaluate · Track</p>')
 
 
 def render_input_panel() -> UIInput:
-    with st.container(border=True):
-        st.subheader("Input")
+    # Segmented mode toggle
+    mode = st.radio(
+        "Input type",
+        options=["URL", "Paste text"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    mode_key = "url" if mode == "URL" else "text"
 
-        mode = st.radio(
-            "Choose input type",
-            options=["url", "text"],
-            horizontal=True,
+    url = ""
+    text = ""
+
+    if mode_key == "url":
+        url = st.text_input(
+            "Job posting URL",
+            placeholder="https://wellfound.com/...",
+            label_visibility="collapsed",
+        )
+    else:
+        text = st.text_area(
+            "Job posting text",
+            height=200,
+            placeholder="Paste the full job posting here…",
+            label_visibility="collapsed",
         )
 
-        url = ""
-        text = ""
-
-        if mode == "url":
-            url = st.text_input("Job posting URL", placeholder="https://...")
-        else:
-            text = st.text_area("Job posting text", height=240, placeholder="Paste the full job posting...")
-
-        return UIInput(mode=mode, url=url.strip(), text=text.strip())
+    return UIInput(mode=mode_key, url=url.strip(), text=text.strip())
 
 
 def validate_inputs(ui: UIInput) -> Tuple[bool, Optional[str]]:
@@ -80,81 +89,181 @@ def render_outputs(
     extract_json: Optional[Dict[str, Any]],
     qa_json: Optional[Dict[str, Any]],
 ):
-    st.subheader("Job Summary")
-    if summary_md:
-        st.markdown(summary_md)
-    else:
-        st.info("No summary found yet. Run an extraction to generate job_summary.md")
+    if not extract_json:
+        st.info("No extraction yet. Paste a job posting and click Analyze.")
+        return
 
-    with st.expander("Structured JSON (job_extract.json)", expanded=False):
-        if extract_json is None:
-            st.write("Not found.")
-        else:
-            st.json(extract_json)
+    details = extract_json.get("details", {})
+    role     = details.get("role", {}) if isinstance(details, dict) else {}
+    company  = details.get("company", {}) if isinstance(details, dict) else {}
+    skills   = extract_json.get("skills", {})
 
-    with st.expander("QA Report (quality_report.json)", expanded=False):
-        if qa_json is None:
-            st.write("Not found.")
+    title    = role.get("job_title") or extract_json.get("title") or "Unknown role"
+    co_name  = company.get("name") or "Unknown company"
+    location = role.get("location") or "Location not stated"
+    emp_type = role.get("employment_type") or ""
+    comp     = role.get("compensation") or ""
+
+    meta_parts = [p for p in [co_name, location, emp_type, comp] if p]
+    meta_str   = "  ·  ".join(meta_parts)
+
+    # Job header
+    st.html(f"""
+    <p class="job-header-title">{title}</p>
+    <p class="job-header-meta">{meta_str}</p>
+    """)
+
+    # Required skills pills
+    req_skills = skills.get("required", []) if isinstance(skills, dict) else []
+    if req_skills:
+        st.html('<p class="section-label">Required skills</p>')
+        pills_html = "".join(
+            f'<span class="skill-pill">{s}</span>' for s in req_skills
+        )
+        st.html(f'<div class="skill-pill-row">{pills_html}</div>')
+
+    # Expandable sections
+    responsibilities = extract_json.get("responsibilities", [])
+    requirements     = extract_json.get("requirements", [])
+    preferred        = extract_json.get("preferred_qualifications", [])
+    pref_skills      = skills.get("preferred", []) if isinstance(skills, dict) else []
+
+    with st.expander(f"Responsibilities  ({len(responsibilities)})", expanded=False):
+        if responsibilities:
+            for item in responsibilities:
+                st.markdown(f"- {item}")
         else:
+            st.caption("None extracted.")
+
+    with st.expander(f"Requirements  ({len(requirements)})", expanded=False):
+        if requirements:
+            for item in requirements:
+                st.markdown(f"- {item}")
+        else:
+            st.caption("None extracted.")
+
+    with st.expander(f"Preferred  ({len(preferred) + len(pref_skills)})", expanded=False):
+        if preferred:
+            for item in preferred:
+                st.markdown(f"- {item}")
+        if pref_skills:
+            st.caption("Preferred skills: " + ", ".join(pref_skills))
+        if not preferred and not pref_skills:
+            st.caption("None extracted.")
+
+    with st.expander("Extracted data", expanded=False):
+        st.json(extract_json)
+        if qa_json:
+            st.divider()
+            st.caption("QA report")
             st.json(qa_json)
 
 
-def render_match_score(match_result) -> None:
-    """Display skill match score card after extraction."""
+def render_match_score(match_result, qa_json: Optional[Dict] = None) -> None:
+    """Display skill match score strip with QA badge."""
     from jobpostprofiler.core.skill_match import MatchResult
     if not isinstance(match_result, MatchResult):
         return
 
-    st.subheader(f"Skill Match: {match_result.overall_score:.0%}")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Required Skills", f"{match_result.required_pct:.0%}")
-        if match_result.required_matched:
-            st.caption(f"Matched: {', '.join(match_result.required_matched)}")
-        if match_result.required_missing:
-            st.caption(f"Missing: {', '.join(match_result.required_missing)}")
-    with col2:
-        st.metric("Preferred Skills", f"{match_result.preferred_pct:.0%}")
-        if match_result.preferred_matched:
-            st.caption(f"Matched: {', '.join(match_result.preferred_matched)}")
-        if match_result.preferred_missing:
-            st.caption(f"Missing: {', '.join(match_result.preferred_missing)}")
+    overall  = f"{match_result.overall_score:.0%}"
+    req_pct  = f"{match_result.required_pct:.0%}"
+    pref_pct = f"{match_result.preferred_pct:.0%}"
+
+    qa_passed = qa_json.get("passed", True) if qa_json else True
+    qa_label  = "Audit passed" if qa_passed else "Audit issues"
+    qa_class  = "qa-badge qa-pass" if qa_passed else "qa-badge qa-fail"
+
+    st.html(f"""
+    <div class="match-strip">
+        <div>
+            <div class="match-primary">{overall}</div>
+            <div class="match-label">Skill match</div>
+        </div>
+        <div class="match-stat">
+            <div class="match-stat-num">{req_pct}</div>
+            <div class="match-stat-label">required</div>
+        </div>
+        <div class="match-stat">
+            <div class="match-stat-num">{pref_pct}</div>
+            <div class="match-stat-label">preferred</div>
+        </div>
+        <span class="{qa_class}">{qa_label}</span>
+    </div>
+    """)
 
 
 def render_tracker_tab() -> None:
     """Render the job tracker pipeline view."""
-    from jobpostprofiler.db.store import list_jobs, get_job, update_job, delete_job, VALID_STATUSES
+    from jobpostprofiler.db.store import (
+        list_jobs, get_job, update_job, delete_job, VALID_STATUSES
+    )
+    from collections import Counter
 
     jobs = list_jobs()
     if not jobs:
-        st.info("No jobs tracked yet. Use the Extractor tab to process a posting.")
+        st.caption("No jobs tracked yet. Use the Extract tab to analyze a posting.")
         return
 
-    # Status summary metrics
-    from collections import Counter
+    # ── Status summary strip ──────────────────────────────────────────────
+    STATUS_COLORS = {
+        "found":        "",
+        "applied":      "color:#3b82f6;",
+        "phone_screen": "color:#f59e0b;",
+        "technical":    "color:#f59e0b;",
+        "offer":        "color:#22c55e;",
+        "rejected":     "color:#ef4444;",
+        "ghosted":      "",
+    }
     counts = Counter(j["status"] for j in jobs)
-    cols = st.columns(len(counts))
-    for col, (status, count) in zip(cols, sorted(counts.items())):
-        col.metric(status, count)
 
-    # Jobs table
-    display_cols = ["id", "status", "company", "title", "date_found",
-                    "salary_range", "match_score", "source_channel"]
-    rows = []
+    # Render in canonical pipeline order; show 0 for missing statuses
+    pipeline_order = ["found", "applied", "phone_screen", "technical",
+                      "offer", "rejected", "ghosted"]
+    strip_items = ""
+    for status in pipeline_order:
+        count = counts.get(status, 0)
+        label = status.replace("_", " ")
+        color_style = STATUS_COLORS.get(status, "")
+        strip_items += f"""
+        <div class="status-stat">
+            <div class="status-stat-num" style="{color_style}">{count}</div>
+            <div class="status-stat-label">{label}</div>
+        </div>"""
+    st.html(f'<div class="status-strip">{strip_items}</div>')
+
+    # ── Jobs table ────────────────────────────────────────────────────────
+    import pandas as pd
+
+    display_rows = []
     for j in jobs:
-        row = {c: j.get(c) for c in display_cols}
-        if row.get("match_score") is not None:
-            row["match_score"] = f"{row['match_score']:.0%}"
-        else:
-            row["match_score"] = "—"
-        rows.append(row)
+        status = j.get("status", "found")
+        match = f"{j['match_score']:.0%}" if j.get("match_score") is not None else "—"
+        display_rows.append({
+            "Company":  j.get("company") or "—",
+            "Role":     j.get("title") or "—",
+            "Status":   status.replace("_", " "),
+            "Match":    match,
+            "Added":    j.get("date_found") or "—",
+        })
 
-    st.dataframe(rows, width='stretch', hide_index=True)
+    df = pd.DataFrame(display_rows)
+    st.dataframe(df, hide_index=True, width='stretch')
 
-    # Detail view
-    job_options = {j["id"]: f"[{j['id']}] {j.get('company', '?')} — {j.get('title', '?')}" for j in jobs}
-    selected_id = st.selectbox("View job details", options=list(job_options.keys()),
-                               format_func=lambda x: job_options[x])
+    # ── Row selector ──────────────────────────────────────────────────────
+    job_options = {
+        j["id"]: f"{j.get('company') or '?'}  —  {j.get('title') or '?'}"
+        for j in jobs
+    }
+    st.html('<div style="margin-top:6px;"></div>')
+    selected_id = st.selectbox(
+        "Select a job to edit",
+        options=list(job_options.keys()),
+        format_func=lambda x: job_options[x],
+        index=None,
+        placeholder="Select a job to view or edit…",
+        label_visibility="collapsed",
+    )
+
     if not selected_id:
         return
 
@@ -162,68 +271,63 @@ def render_tracker_tab() -> None:
     if not job:
         return
 
-    # Raw detail view
-    with st.expander("Raw JSON", expanded=False):
-        st.json({k: v for k, v in job.items() if v is not None and k != "jd_text"})
+    # ── Edit panel ────────────────────────────────────────────────────────
+    st.html('<div style="margin-top:0.5rem;"></div>')
 
-    # Edit form
-    st.markdown("#### Edit Job")
-    with st.form(key=f"edit_job_{selected_id}"):
-        statuses = sorted(VALID_STATUSES)
-        current_status_idx = statuses.index(job["status"]) if job["status"] in statuses else 0
+    statuses = sorted(VALID_STATUSES)
+    channels = ["wellfound", "yc", "linkedin", "direct", "other"]
 
+    with st.form(key=f"edit_{selected_id}"):
         col1, col2 = st.columns(2)
         with col1:
-            new_title = st.text_input("Title", value=job.get("title") or "")
-            new_company = st.text_input("Company", value=job.get("company") or "")
-            new_location = st.text_input("Location", value=job.get("location") or "")
-            new_salary = st.text_input("Salary Range", value=job.get("salary_range") or "")
+            new_title   = st.text_input("Role",     value=job.get("title") or "")
+            new_company = st.text_input("Company",  value=job.get("company") or "")
+            new_loc     = st.text_input("Location", value=job.get("location") or "")
+            new_salary  = st.text_input("Salary",   value=job.get("salary_range") or "")
         with col2:
-            new_status = st.selectbox("Status", options=statuses, index=current_status_idx)
-            new_remote = st.text_input("Remote Policy", value=job.get("remote_policy") or "")
-            new_emp_type = st.text_input("Employment Type", value=job.get("employment_type") or "")
-            new_channel = st.selectbox(
-                "Source Channel",
-                options=["wellfound", "yc", "linkedin", "direct", "other"],
-                index=["wellfound", "yc", "linkedin", "direct", "other"].index(
-                    job.get("source_channel") or "other"
-                ),
+            curr_status_idx = statuses.index(job["status"]) if job["status"] in statuses else 0
+            new_status  = st.selectbox("Status",  options=statuses, index=curr_status_idx)
+            curr_ch_idx = channels.index(job.get("source_channel") or "other")
+            new_channel = st.selectbox("Channel", options=channels, index=curr_ch_idx)
+            new_remote  = st.text_input("Remote policy", value=job.get("remote_policy") or "")
+            new_emp     = st.text_input("Employment type", value=job.get("employment_type") or "")
+
+        new_notes = st.text_area("Notes", value=job.get("notes") or "", height=80)
+
+        save_col, del_col = st.columns([3, 1])
+        with save_col:
+            saved = st.form_submit_button("Save changes")
+        with del_col:
+            deleted = st.form_submit_button(
+                "Delete",
+                type="secondary",
+                help="Permanently delete this job record.",
             )
-        new_notes = st.text_area("Notes", value=job.get("notes") or "")
 
-        if st.form_submit_button("Save Changes"):
-            fields = {}
-            if new_title != (job.get("title") or ""):
-                fields["title"] = new_title
-            if new_company != (job.get("company") or ""):
-                fields["company"] = new_company
-            if new_location != (job.get("location") or ""):
-                fields["location"] = new_location
-            if new_salary != (job.get("salary_range") or ""):
-                fields["salary_range"] = new_salary
-            if new_status != job["status"]:
-                fields["status"] = new_status
-            if new_remote != (job.get("remote_policy") or ""):
-                fields["remote_policy"] = new_remote
-            if new_emp_type != (job.get("employment_type") or ""):
-                fields["employment_type"] = new_emp_type
-            if new_channel != (job.get("source_channel") or "other"):
-                fields["source_channel"] = new_channel
-            if new_notes != (job.get("notes") or ""):
-                fields["notes"] = new_notes
-
-            if fields:
-                update_job(selected_id, **fields)
-                st.success(f"Updated: {', '.join(fields.keys())}")
-                st.rerun()
-            else:
-                st.info("No changes detected.")
-
-    # Delete action
-    st.markdown("#### Delete Job")
-    with st.expander("Danger zone", expanded=False):
-        st.warning(f"This will permanently delete job #{selected_id} and any linked applications.")
-        if st.button("Delete this job", type="primary", key=f"del_{selected_id}"):
-            delete_job(selected_id)
-            st.success(f"Deleted job #{selected_id}.")
+    if saved:
+        fields: dict = {}
+        mapping = [
+            ("title",           new_title,   job.get("title") or ""),
+            ("company",         new_company, job.get("company") or ""),
+            ("location",        new_loc,     job.get("location") or ""),
+            ("salary_range",    new_salary,  job.get("salary_range") or ""),
+            ("status",          new_status,  job["status"]),
+            ("source_channel",  new_channel, job.get("source_channel") or "other"),
+            ("remote_policy",   new_remote,  job.get("remote_policy") or ""),
+            ("employment_type", new_emp,     job.get("employment_type") or ""),
+            ("notes",           new_notes,   job.get("notes") or ""),
+        ]
+        for key, new_val, old_val in mapping:
+            if new_val != old_val:
+                fields[key] = new_val
+        if fields:
+            update_job(selected_id, **fields)
+            st.success(f"Updated: {', '.join(fields.keys())}")
             st.rerun()
+        else:
+            st.caption("No changes detected.")
+
+    if deleted:
+        delete_job(selected_id)
+        st.caption(f"Deleted job #{selected_id}.")
+        st.rerun()

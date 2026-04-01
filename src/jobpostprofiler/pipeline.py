@@ -154,13 +154,25 @@ def run_pipeline(
     skills_path = Path(__file__).resolve().parents[2] / "my_skills.json"
     if skills_path.exists():
         user_profile = json.loads(skills_path.read_text(encoding="utf-8"))
-        user_skills = user_profile.get("skills", [])
+        user_skills  = user_profile.get("skills", [])
+        bridgeable   = {s.lower().strip() for s in user_profile.get("bridgeable", [])}
         if user_skills:
             match_result = compute_match(
                 user_skills=user_skills,
                 required_skills=extract.skills.required,
                 preferred_skills=extract.skills.preferred,
             )
+            # Annotate which missing skills are bridgeable.
+            # These are private attributes — not part of the MatchResult
+            # dataclass contract — used only by the UI rendering layer.
+            match_result._req_bridgeable  = [
+                s for s in match_result.required_missing
+                if s.lower().strip() in bridgeable
+            ]
+            match_result._pref_bridgeable = [
+                s for s in match_result.preferred_missing
+                if s.lower().strip() in bridgeable
+            ]
 
     # ------------------------------------------------------------------
     # Step 7: Add tracker

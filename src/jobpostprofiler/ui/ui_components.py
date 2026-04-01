@@ -191,6 +191,40 @@ def render_match_score(match_result, qa_json: Optional[Dict] = None) -> None:
     </div>
     """)
 
+    # Bridgeable gap display — only rendered when annotation is present
+    req_bridgeable  = getattr(match_result, "_req_bridgeable",  [])
+    pref_bridgeable = getattr(match_result, "_pref_bridgeable", [])
+    req_true_gap    = [s for s in match_result.required_missing
+                       if s not in req_bridgeable]
+    pref_true_gap   = [s for s in match_result.preferred_missing
+                       if s not in pref_bridgeable]
+
+    has_any_gap = (req_bridgeable or pref_bridgeable
+                   or req_true_gap or pref_true_gap)
+
+    if has_any_gap:
+        with st.expander("Skill gap breakdown", expanded=False):
+            if req_true_gap:
+                st.caption("Required — not in profile")
+                st.markdown(
+                    "  ".join(f"`{s}`" for s in req_true_gap) or "—"
+                )
+            if req_bridgeable:
+                st.caption("Required — bridgeable ⚡")
+                st.markdown(
+                    "  ".join(f"`{s}`" for s in req_bridgeable) or "—"
+                )
+            if pref_true_gap:
+                st.caption("Preferred — not in profile")
+                st.markdown(
+                    "  ".join(f"`{s}`" for s in pref_true_gap) or "—"
+                )
+            if pref_bridgeable:
+                st.caption("Preferred — bridgeable ⚡")
+                st.markdown(
+                    "  ".join(f"`{s}`" for s in pref_bridgeable) or "—"
+                )
+
 
 def render_tracker_tab() -> None:
     """Render the job tracker pipeline view."""

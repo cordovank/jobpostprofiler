@@ -8,6 +8,112 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+_ALIASES: dict[str, str] = {
+    # ML / AI
+    "machine learning":               "ml",
+    "ml":                             "ml",
+    "deep learning":                  "dl",
+    "dl":                             "dl",
+    "natural language processing":    "nlp",
+    "nlp":                            "nlp",
+    "large language model":           "llm",
+    "large language models":          "llm",
+    "llms":                           "llm",
+    "llm":                            "llm",
+    "retrieval-augmented generation": "rag",
+    "retrieval augmented generation": "rag",
+    "rag":                            "rag",
+    "reinforcement learning":         "rl",
+    "rl":                             "rl",
+    "computer vision":                "cv",
+    "cv":                             "cv",
+    # Frameworks / libraries
+    "huggingface":                    "hugging face",
+    "hugging face":                   "hugging face",
+    "hf transformers":                "hugging face",
+    "transformers":                   "hugging face",
+    "sklearn":                        "scikit-learn",
+    "scikit-learn":                   "scikit-learn",
+    "scikit learn":                   "scikit-learn",
+    "pytorch":                        "pytorch",
+    "torch":                          "pytorch",
+    "tensorflow":                     "tensorflow",
+    "tf":                             "tensorflow",
+    "langchain":                      "langchain",
+    "lang chain":                     "langchain",
+    "langgraph":                      "langgraph",
+    "openai":                         "openai api",
+    "openai api":                     "openai api",
+    # Infrastructure / serving
+    "fastapi":                        "fastapi",
+    "fast api":                       "fastapi",
+    "docker":                         "docker",
+    "containerization":               "docker",
+    "kubernetes":                     "kubernetes",
+    "k8s":                            "kubernetes",
+    "aws":                            "aws",
+    "amazon web services":            "aws",
+    "gcp":                            "gcp",
+    "google cloud":                   "gcp",
+    "azure":                          "azure",
+    "microsoft azure":                "azure",
+    # Databases / retrieval
+    "vector database":                "vector databases",
+    "vector db":                      "vector databases",
+    "vector databases":               "vector databases",
+    "faiss":                          "faiss",
+    "pinecone":                       "pinecone",
+    "chroma":                         "chromadb",
+    "chromadb":                       "chromadb",
+    "weaviate":                       "weaviate",
+    "bm25":                           "bm25",
+    "elasticsearch":                  "elasticsearch",
+    "postgres":                       "postgresql",
+    "postgresql":                     "postgresql",
+    # Experiment tracking / MLOps
+    "weights & biases":               "wandb",
+    "weights and biases":             "wandb",
+    "wandb":                          "wandb",
+    "mlflow":                         "mlflow",
+    "ml flow":                        "mlflow",
+    "dvc":                            "dvc",
+    "sagemaker":                      "sagemaker",
+    "amazon sagemaker":               "sagemaker",
+    # Languages
+    "python3":                        "python",
+    "python":                         "python",
+    "javascript":                     "javascript",
+    "js":                             "javascript",
+    "typescript":                     "typescript",
+    "ts":                             "typescript",
+    "react.js":                       "react",
+    "reactjs":                        "react",
+    "react":                          "react",
+    # Evaluation
+    "ragas":                          "ragas",
+    "bleu":                           "bleu",
+    "rouge":                          "rouge",
+    "mrr":                            "mrr",
+    # Soft / cross-cutting
+    "rest api":                       "rest apis",
+    "restful api":                    "rest apis",
+    "rest apis":                      "rest apis",
+    "api development":                "rest apis",
+    "pydantic":                       "pydantic",
+    "sql":                            "sql",
+    "git":                            "git",
+    "version control":                "git",
+    "agile":                          "agile",
+    "scrum":                          "agile",
+}
+
+
+def _normalize(skill: str) -> str:
+    """Lowercase, strip, then resolve through alias map.
+    Unknown skills pass through unchanged."""
+    key = skill.lower().strip()
+    return _ALIASES.get(key, key)
+
 
 @dataclass
 class MatchResult:
@@ -40,12 +146,12 @@ def compute_match(
     Returns:
         MatchResult with matched/missing lists and scores.
     """
-    user_set = {s.lower().strip() for s in user_skills}
+    user_set = {_normalize(s) for s in user_skills}
 
-    req_matched = [s for s in required_skills if s.lower().strip() in user_set]
-    req_missing = [s for s in required_skills if s.lower().strip() not in user_set]
-    pref_matched = [s for s in preferred_skills if s.lower().strip() in user_set]
-    pref_missing = [s for s in preferred_skills if s.lower().strip() not in user_set]
+    req_matched  = [s for s in required_skills  if _normalize(s) in user_set]
+    req_missing  = [s for s in required_skills  if _normalize(s) not in user_set]
+    pref_matched = [s for s in preferred_skills if _normalize(s) in user_set]
+    pref_missing = [s for s in preferred_skills if _normalize(s) not in user_set]
 
     req_pct = len(req_matched) / len(required_skills) if required_skills else 1.0
     pref_pct = len(pref_matched) / len(preferred_skills) if preferred_skills else 1.0

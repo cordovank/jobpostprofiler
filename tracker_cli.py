@@ -341,6 +341,50 @@ def cmd_edit(args):
         print(f"  ✗ No changes made.")
 
 
+def cmd_rescore(args):
+    """Recompute and update match_score for all jobs in jobs.db
+    using the current my_skills.json.
+
+    Safe to run multiple times. Jobs with no skills data are skipped.
+    Only updates the match_score column — no other fields are touched.
+    """
+    import json
+    from pathlib import Path
+    from jobpostprofiler.core.skill_match import compute_match
+
+    skills_path = Path(__file__).resolve().parent / "my_skills.json"
+    if not skills_path.exists():
+        print("  my_skills.json not found. Nothing to do.")
+        return
+
+    user_profile = json.loads(skills_path.read_text(encoding="utf-8"))
+    user_skills  = user_profile.get("skills", [])
+    if not user_skills:
+        print("  No skills found in my_skills.json. Nothing to do.")
+        return
+
+    jobs = list_jobs()
+    if not jobs:
+        print("  No jobs in tracker. Nothing to do.")
+        return
+
+    updated  = 0
+    skipped  = 0
+    for job in jobs:
+        required  = json.loads(job.get("required_skills")  or "[]")
+        preferred = json.loads(job.get("preferred_skills") or "[]")
+        if not required and not preferred:
+            skipped += 1
+            continue
+        result = compute_match(user_skills, required, preferred)
+        update_job(job["id"], match_score=result.overall_score)
+        updated += 1
+
+    print(f"  ✓ Re-scored  : {updated} job(s)")
+    if skipped:
+        print(f"  — Skipped    : {skipped} job(s) (no skills data)")
+
+
 # ── Argument parser ───────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -406,6 +450,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_delete.add_argument("-y", "--yes", action="store_true",
                           help="Skip confirmation prompt")
 
+    # rescore
+    sub.add_parser(
+        "rescore",
+        help="Recompute match scores for all jobs using current my_skills.json",
+    )
+
     # edit
     p_edit = sub.add_parser("edit", help="Edit fields on a job record")
     p_edit.add_argument("job_id", type=int)
@@ -441,6 +491,7 @@ def main():
         "save":     cmd_save,
         "delete":   cmd_delete,
         "edit":     cmd_edit,
+        "rescore": cmd_rescore,
     }
     dispatch[args.command](args)
 

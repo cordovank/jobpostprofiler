@@ -8,5 +8,13 @@
     "FastAPI",
     "pandas",
     "scikit-learn"
+  ],
+  "bridgeable": [
+    "MLflow",
+    "W&B",
+    "LangGraph",
+    "RAGAS",
+    "LoRA",
+    "PEFT"
   ]
 }

@@ -1,0 +1,8 @@
+# Sets the default (light) surface colors.
+# The dark mode toggle flips custom HTML element colors via CSS injection
+# but cannot flip these root surfaces mid-session — Streamlit limitation.
+[theme]
+base = "light"
+backgroundColor = "#F6F3EE"
+secondaryBackgroundColor = "#EFECEA"
+textColor = "#1C1916"

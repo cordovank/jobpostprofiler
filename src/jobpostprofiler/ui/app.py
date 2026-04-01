@@ -31,163 +31,6 @@ st.set_page_config(
     layout="centered",
 )
 
-st.html("""
-<style>
-/* ── Typography ── */
-[data-testid="stAppViewContainer"] h1 {
-    font-size: 22px;
-    font-weight: 400;
-    letter-spacing: 0.01em;
-    margin-bottom: 2px;
-}
-
-/* ── Subtitle line ── */
-.profiler-subtitle {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-color);
-    opacity: 0.45;
-    margin-top: 2px;
-    margin-bottom: 1.5rem;
-}
-
-/* ── Section labels (used above inputs and metric strips) ── */
-.section-label {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    opacity: 0.5;
-    margin-bottom: 6px;
-}
-
-/* ── Skill pills ── */
-.skill-pill-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 8px 0 12px;
-}
-.skill-pill {
-    font-size: 12px;
-    padding: 3px 11px;
-    border-radius: 20px;
-    border: 0.5px solid rgba(128,128,128,0.25);
-    background: rgba(128,128,128,0.07);
-}
-
-/* ── Match score strip ── */
-.match-strip {
-    display: flex;
-    align-items: flex-end;
-    gap: 2rem;
-    padding-bottom: 1rem;
-    margin-bottom: 1rem;
-    border-bottom: 0.5px solid rgba(128,128,128,0.15);
-    flex-wrap: wrap;
-}
-.match-primary {
-    font-size: 36px;
-    font-weight: 500;
-    line-height: 1;
-}
-.match-label {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    opacity: 0.45;
-    margin-top: 3px;
-}
-.match-stat { text-align: center; }
-.match-stat-num { font-size: 16px; font-weight: 500; }
-.match-stat-label {
-    font-size: 10px;
-    opacity: 0.45;
-    margin-top: 2px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-}
-
-/* ── QA badge ── */
-.qa-badge {
-    font-size: 11px;
-    padding: 3px 10px;
-    border-radius: 20px;
-    align-self: flex-end;
-    margin-bottom: 4px;
-}
-.qa-pass {
-    background: rgba(34,197,94,0.12);
-    color: #16a34a;
-}
-.qa-fail {
-    background: rgba(239,68,68,0.12);
-    color: #dc2626;
-}
-
-/* ── Job header ── */
-.job-header-title {
-    font-size: 17px;
-    font-weight: 500;
-    margin: 0 0 3px;
-}
-.job-header-meta {
-    font-size: 13px;
-    opacity: 0.55;
-    margin: 0 0 1rem;
-}
-
-/* ── Status summary strip ── */
-.status-strip {
-    display: flex;
-    gap: 1.5rem;
-    padding-bottom: 1rem;
-    margin-bottom: 1rem;
-    border-bottom: 0.5px solid rgba(128,128,128,0.15);
-    flex-wrap: wrap;
-}
-.status-stat { text-align: center; }
-.status-stat-num {
-    font-size: 18px;
-    font-weight: 500;
-    line-height: 1;
-}
-.status-stat-label {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    opacity: 0.45;
-    margin-top: 3px;
-}
-
-/* ── Status dot colors ── */
-.dot-found       { color: #9ca3af; }
-.dot-applied     { color: #3b82f6; }
-.dot-phone-screen { color: #f59e0b; }
-.dot-technical   { color: #f59e0b; }
-.dot-offer       { color: #22c55e; }
-.dot-rejected    { color: #ef4444; }
-.dot-ghosted     { color: #9ca3af; }
-
-/* ── Delete link ── */
-.delete-link {
-    background: none;
-    border: none;
-    padding: 0;
-    font-size: 12px;
-    color: #dc2626;
-    cursor: pointer;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-}
-
-/* ── Hide Streamlit default padding/decoration on expanders ── */
-[data-testid="stExpander"] summary {
-    font-size: 13px !important;
-}
-</style>
-""")
-
 render_header()
 
 # ---------------------------------------------------------------------------
@@ -195,13 +38,359 @@ render_header()
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.subheader("Model")
+    st.caption("MODEL")
     model_input = st.text_input(
         "LLM model name",
         value=_base_cfg.MODEL_NAME or "",
         help="Override the model from .env. Leave blank to use the default.",
     )
     st.caption(f"Provider: `{_base_cfg.provider}`")
+    st.divider()
+    st.toggle(
+        "Dark mode",
+        value=False,
+        key="dark_mode",
+    )
+
+# ---------------------------------------------------------------------------
+# Mode-aware CSS injection
+# ---------------------------------------------------------------------------
+
+_dark = st.session_state.get("dark_mode", False)
+
+_LIGHT = {
+    "page_bg":          "#F6F3EE",
+    "sidebar_bg":       "#EFECEA",
+    "text":             "#1C1916",
+    "text_muted":       "#8A8278",
+    "border":           "rgba(28,25,22,0.09)",
+    "pill_bg":          "#E8E4DC",
+    "pill_text":        "#5A554E",
+    "match_num":        "#2D6E4E",
+    "qa_pass_bg":       "#E4EDE7",
+    "qa_pass_text":     "#2D6E4E",
+    "qa_fail_bg":       "#EDE4E2",
+    "qa_fail_text":     "#8B3A3A",
+    "dot_found":        "#9A9490",
+    "dot_applied":      "#3D6E9E",
+    "dot_screen":       "#9E6E2A",
+    "dot_offer":        "#2D6E4E",
+    "dot_rejected":     "#8B3A3A",
+    "dot_ghosted":      "#9A9490",
+}
+
+_DARK = {
+    "page_bg":          "#141618",
+    "sidebar_bg":       "#1C1E20",
+    "text":             "#E2E4E6",
+    "text_muted":       "#72767A",
+    "border":           "rgba(226,228,230,0.08)",
+    "pill_bg":          "#1E2124",
+    "pill_text":        "#9AA0A6",
+    "match_num":        "#6BBF8A",
+    "qa_pass_bg":       "rgba(107,191,138,0.13)",
+    "qa_pass_text":     "#6BBF8A",
+    "qa_fail_bg":       "rgba(192,112,112,0.13)",
+    "qa_fail_text":     "#C07878",
+    "dot_found":        "#6A6560",
+    "dot_applied":      "#5F9EC4",
+    "dot_screen":       "#C49040",
+    "dot_offer":        "#6BBF8A",
+    "dot_rejected":     "#C07878",
+    "dot_ghosted":      "#6A6560",
+}
+
+_C = _DARK if _dark else _LIGHT
+
+_dark_overrides = f"""
+/* ── Dark mode: backgrounds ── */
+[data-testid="stAppViewContainer"],
+[data-testid="stApp"] {{
+    background-color: {_C["page_bg"]} !important;
+}}
+[data-testid="stHeader"] {{
+    background-color: {_C["page_bg"]} !important;
+}}
+[data-testid="stHeader"] button {{
+    color: {_C["text_muted"]} !important;
+}}
+[data-testid="stSidebar"] > div:first-child {{
+    background-color: {_C["sidebar_bg"]} !important;
+}}
+
+/* ── Dark mode: native Streamlit text ── */
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewContainer"] h1,
+[data-testid="stAppViewContainer"] h2,
+[data-testid="stAppViewContainer"] h3,
+[data-testid="stAppViewContainer"] h4,
+[data-testid="stAppViewContainer"] p,
+[data-testid="stAppViewContainer"] li,
+[data-testid="stAppViewContainer"] span,
+[data-testid="stAppViewContainer"] label,
+[data-testid="stAppViewContainer"] div,
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] div {{
+    color: {_C["text"]} !important;
+}}
+
+/* ── Dark mode: muted elements ── */
+[data-testid="stAppViewContainer"] .stCaption,
+[data-testid="stAppViewContainer"] [data-testid="stCaptionContainer"],
+[data-testid="stSidebar"] .stCaption,
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {{
+    color: {_C["text_muted"]} !important;
+}}
+
+/* ── Dark mode: text inputs and textareas ── */
+[data-testid="stAppViewContainer"] input,
+[data-testid="stAppViewContainer"] textarea,
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] textarea {{
+    color: {_C["text"]} !important;
+    background-color: {_C["pill_bg"]} !important;
+    border-color: {_C["border"]} !important;
+}}
+[data-testid="stAppViewContainer"] input::placeholder,
+[data-testid="stAppViewContainer"] textarea::placeholder,
+[data-testid="stSidebar"] input::placeholder,
+[data-testid="stSidebar"] textarea::placeholder {{
+    color: {_C["text_muted"]} !important;
+    opacity: 1 !important;
+}}
+
+/* ── Dark mode: selectbox / dropdown (BaseWeb) ── */
+[data-testid="stAppViewContainer"] [data-baseweb="select"] > div,
+[data-testid="stSidebar"] [data-baseweb="select"] > div {{
+    background-color: {_C["pill_bg"]} !important;
+    border-color: {_C["border"]} !important;
+    color: {_C["text"]} !important;
+}}
+[data-testid="stAppViewContainer"] [data-baseweb="select"] span,
+[data-testid="stSidebar"] [data-baseweb="select"] span {{
+    color: {_C["text"]} !important;
+}}
+/* Dropdown menu (popover) + toolbar menu */
+[data-baseweb="popover"],
+[data-baseweb="popover"] > div {{
+    background-color: {_C["sidebar_bg"]} !important;
+}}
+[data-baseweb="popover"] li,
+[data-baseweb="popover"] a,
+[data-baseweb="popover"] span {{
+    color: {_C["text"]} !important;
+    background-color: transparent !important;
+}}
+[data-baseweb="popover"] li:hover,
+[data-baseweb="popover"] a:hover {{
+    background-color: {_C["pill_bg"]} !important;
+}}
+/* Main menu (three-dot / hamburger) */
+[data-testid="stMainMenu"] {{
+    color: {_C["text_muted"]} !important;
+}}
+[data-baseweb="modal"] [data-baseweb="menu"],
+[data-baseweb="modal"] ul {{
+    background-color: {_C["sidebar_bg"]} !important;
+}}
+[data-baseweb="modal"] li {{
+    color: {_C["text"]} !important;
+}}
+[data-baseweb="modal"] li:hover {{
+    background-color: {_C["pill_bg"]} !important;
+}}
+
+/* ── Dark mode: tabs ── */
+[data-testid="stAppViewContainer"] button[data-baseweb="tab"] {{
+    color: {_C["text_muted"]} !important;
+}}
+[data-testid="stAppViewContainer"] button[data-baseweb="tab"][aria-selected="true"] {{
+    color: {_C["text"]} !important;
+}}
+
+/* ── Dark mode: expanders ── */
+[data-testid="stExpander"] {{
+    border-color: {_C["border"]} !important;
+    background-color: {_C["pill_bg"]} !important;
+}}
+[data-testid="stExpander"] summary {{
+    color: {_C["text"]} !important;
+    background-color: {_C["pill_bg"]} !important;
+}}
+[data-testid="stExpander"] [data-testid="stExpanderDetails"] {{
+    background-color: {_C["pill_bg"]} !important;
+}}
+
+/* ── Dark mode: table ── */
+[data-testid="stTable"] table {{
+    color: {_C["text"]} !important;
+    background-color: {_C["pill_bg"]} !important;
+}}
+[data-testid="stTable"] th {{
+    color: {_C["text_muted"]} !important;
+    background-color: {_C["sidebar_bg"]} !important;
+    border-color: {_C["border"]} !important;
+}}
+[data-testid="stTable"] td {{
+    color: {_C["text"]} !important;
+    border-color: {_C["border"]} !important;
+}}
+
+/* ── Dark mode: buttons ── */
+[data-testid="stAppViewContainer"] button,
+[data-testid="stSidebar"] button {{
+    color: {_C["text"]} !important;
+    border-color: {_C["border"]} !important;
+    background-color: {_C["pill_bg"]} !important;
+}}
+[data-testid="stAppViewContainer"] button[data-testid="baseButton-primary"] {{
+    color: white !important;
+    background-color: {_C["match_num"]} !important;
+    border-color: {_C["match_num"]} !important;
+}}
+
+/* ── Dark mode: form container ── */
+[data-testid="stForm"] {{
+    border-color: {_C["border"]} !important;
+}}
+
+/* ── Dark mode: checkbox ── */
+[data-testid="stCheckbox"] label span {{
+    color: {_C["text"]} !important;
+}}
+
+/* ── Dark mode: dividers ── */
+[data-testid="stAppViewContainer"] hr,
+[data-testid="stSidebar"] hr {{
+    border-color: {_C["border"]} !important;
+}}
+""" if _dark else ""
+
+st.html(f"""
+<style>
+{_dark_overrides}
+.profiler-subtitle {{
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: {_C["text_muted"]};
+    margin-top: 2px;
+    margin-bottom: 1.5rem;
+}}
+.section-label {{
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: {_C["text_muted"]};
+    margin-bottom: 6px;
+}}
+.skill-pill-row {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 8px 0 12px;
+}}
+.skill-pill {{
+    font-size: 12px;
+    padding: 3px 11px;
+    border-radius: 20px;
+    border: 0.5px solid {_C["border"]};
+    background: {_C["pill_bg"]};
+    color: {_C["pill_text"]};
+}}
+.match-strip {{
+    display: flex;
+    align-items: flex-end;
+    gap: 2rem;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+    border-bottom: 0.5px solid {_C["border"]};
+    flex-wrap: wrap;
+}}
+.match-primary {{
+    font-size: 36px;
+    font-weight: 500;
+    line-height: 1;
+    color: {_C["match_num"]};
+}}
+.match-label {{
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: {_C["text_muted"]};
+    margin-top: 3px;
+}}
+.match-stat {{ text-align: center; }}
+.match-stat-num {{
+    font-size: 16px;
+    font-weight: 500;
+    color: {_C["text"]};
+}}
+.match-stat-label {{
+    font-size: 10px;
+    color: {_C["text_muted"]};
+    margin-top: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}}
+.qa-badge {{
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    align-self: flex-end;
+    margin-bottom: 4px;
+}}
+.qa-pass {{
+    background: {_C["qa_pass_bg"]};
+    color: {_C["qa_pass_text"]};
+}}
+.qa-fail {{
+    background: {_C["qa_fail_bg"]};
+    color: {_C["qa_fail_text"]};
+}}
+.job-header-title {{
+    font-size: 17px;
+    font-weight: 500;
+    margin: 0 0 3px;
+    color: {_C["text"]};
+}}
+.job-header-meta {{
+    font-size: 13px;
+    color: {_C["text_muted"]};
+    margin: 0 0 1rem;
+}}
+.status-strip {{
+    display: flex;
+    gap: 1.5rem;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+    border-bottom: 0.5px solid {_C["border"]};
+    flex-wrap: wrap;
+}}
+.status-stat {{ text-align: center; }}
+.status-stat-num {{
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1;
+    color: {_C["text"]};
+}}
+.status-stat-label {{
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: {_C["text_muted"]};
+    margin-top: 3px;
+}}
+[data-testid="stExpander"] summary {{
+    font-size: 13px !important;
+}}
+</style>
+""")
 
 # Build effective config — override model only if user changed it
 _override = model_input.strip() if model_input.strip() != (_base_cfg.MODEL_NAME or "") else None

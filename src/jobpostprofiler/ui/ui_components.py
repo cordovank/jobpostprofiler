@@ -205,14 +205,16 @@ def render_tracker_tab() -> None:
         return
 
     # ── Status summary strip ──────────────────────────────────────────────
-    STATUS_COLORS = {
-        "found":        "",
-        "applied":      "color:#3b82f6;",
-        "phone_screen": "color:#f59e0b;",
-        "technical":    "color:#f59e0b;",
-        "offer":        "color:#22c55e;",
-        "rejected":     "color:#ef4444;",
-        "ghosted":      "",
+    _dark = st.session_state.get("dark_mode", False)
+
+    _STATUS_COLORS = {
+        "found":        "#6A6560" if _dark else "#9A9490",
+        "applied":      "#5F9EC4" if _dark else "#3D6E9E",
+        "phone_screen": "#C49040" if _dark else "#9E6E2A",
+        "technical":    "#C49040" if _dark else "#9E6E2A",
+        "offer":        "#6BBF8A" if _dark else "#2D6E4E",
+        "rejected":     "#C07878" if _dark else "#8B3A3A",
+        "ghosted":      "#6A6560" if _dark else "#9A9490",
     }
     counts = Counter(j["status"] for j in jobs)
 
@@ -223,10 +225,10 @@ def render_tracker_tab() -> None:
     for status in pipeline_order:
         count = counts.get(status, 0)
         label = status.replace("_", " ")
-        color_style = STATUS_COLORS.get(status, "")
+        color = _STATUS_COLORS.get(status, "")
         strip_items += f"""
         <div class="status-stat">
-            <div class="status-stat-num" style="{color_style}">{count}</div>
+            <div class="status-stat-num" style="color:{color} !important;">{count}</div>
             <div class="status-stat-label">{label}</div>
         </div>"""
     st.html(f'<div class="status-strip">{strip_items}</div>')
@@ -247,7 +249,7 @@ def render_tracker_tab() -> None:
         })
 
     df = pd.DataFrame(display_rows)
-    st.dataframe(df, hide_index=True, width='stretch')
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
     # ── Row selector ──────────────────────────────────────────────────────
     job_options = {
@@ -275,7 +277,7 @@ def render_tracker_tab() -> None:
     st.html('<div style="margin-top:0.5rem;"></div>')
 
     statuses = sorted(VALID_STATUSES)
-    channels = ["wellfound", "yc", "linkedin", "direct", "other"]
+    channels = ["builtin", "dice", "direct", "hiringcafe", "indeed", "linkedin", "towardsaijobs", "upwork", "wellfound", "yc", "other"]
 
     with st.form(key=f"edit_{selected_id}"):
         col1, col2 = st.columns(2)

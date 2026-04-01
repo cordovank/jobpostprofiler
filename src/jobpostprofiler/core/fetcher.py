@@ -83,6 +83,17 @@ def _infer_platform(url: str | None) -> str | None:
     return None
 
 
+# ---- URL extraction from pasted text ---------------------------------------
+
+_URL_RE = re.compile(r"https?://[^\s<>\"')\]}>]+", re.IGNORECASE)
+
+
+def _extract_first_url(text: str) -> str | None:
+    """Return the first HTTP(S) URL found in text, or None."""
+    match = _URL_RE.search(text)
+    return match.group(0) if match else None
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -115,7 +126,14 @@ def fetch_and_normalize(
 # ---------------------------------------------------------------------------
 
 def _from_text(text: str) -> FetchResult:
-    return FetchResult(text=text, input_type="text", method="text")
+    url = _extract_first_url(text)
+    return FetchResult(
+        text=text,
+        input_type="text",
+        method="text",
+        url=url,
+        source_platform=_infer_platform(url),
+    )
 
 
 def _from_file(filepath: str) -> FetchResult:

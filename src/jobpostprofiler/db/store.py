@@ -93,14 +93,36 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+_conn_cache: dict[str, sqlite3.Connection] = {}
+
+
+def _get_conn(db_path: Path = DB_PATH) -> sqlite3.Connection:
+    """Return a cached connection for the given db_path.
+    Creates tables and runs migrations on first access only."""
+    key = str(db_path)
+    if key not in _conn_cache:
+        conn = sqlite3.connect(db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.executescript(SCHEMA_SQL)
+        conn.commit()
+        _migrate(conn)
+        _conn_cache[key] = conn
+    return _conn_cache[key]
+
+
+def close_db(db_path: Path = DB_PATH) -> None:
+    """Close and remove cached connection. Used in tests."""
+    key = str(db_path)
+    conn = _conn_cache.pop(key, None)
+    if conn:
+        conn.close()
+
+
 def init_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    """Create tables if they don't exist. Return open connection."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA_SQL)
-    conn.commit()
-    _migrate(conn)
-    return conn
+    """Create tables if they don't exist. Return open connection.
+    Alias for _get_conn — kept for backward compatibility."""
+    return _get_conn(db_path)
 
 
 # --- Field extraction ------------------------------------------------
@@ -200,7 +222,7 @@ def save_job_from_extract(
         "notes":             None,
     }
 
-    conn    = init_db(db_path)
+    conn    = _get_conn(db_path)
     cursor  = conn.execute(
         """
         INSERT INTO jobs (
@@ -219,7 +241,6 @@ def save_job_from_extract(
     )
     conn.commit()
     job_id = cursor.lastrowid
-    conn.close()
     print(f"[tracker] Saved → jobs.id={job_id}  {row['company']} | {row['title']}")
     return job_id
 
@@ -231,7 +252,7 @@ def list_jobs(
     status: Optional[str] = None,
     db_path: Path = DB_PATH,
 ) -> list[dict]:
-    conn = init_db(db_path)
+    conn = _get_conn(db_path)
     if status:
         rows = conn.execute(
             "SELECT * FROM jobs WHERE status = ? ORDER BY date_found DESC",
@@ -241,13 +262,12 @@ def list_jobs(
         rows = conn.execute(
             "SELECT * FROM jobs ORDER BY date_found DESC"
         ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
 def search_jobs(query: str, db_path: Path = DB_PATH) -> list[dict]:
     """Search jobs by keyword across title, company, notes, and skills."""
-    conn = init_db(db_path)
+    conn = _get_conn(db_path)
     like = f"%{query}%"
     rows = conn.execute(
         """SELECT * FROM jobs
@@ -256,7 +276,6 @@ def search_jobs(query: str, db_path: Path = DB_PATH) -> list[dict]:
            ORDER BY date_found DESC""",
         (like, like, like, like, like),
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]
 
 
@@ -264,16 +283,14 @@ def get_job_by_url(url: str, db_path: Path = DB_PATH) -> Optional[dict]:
     """Return the first job matching the given URL, or None."""
     if not url:
         return None
-    conn = init_db(db_path)
+    conn = _get_conn(db_path)
     row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
-    conn.close()
     return dict(row) if row else None
 
 
 def get_job(job_id: int, db_path: Path = DB_PATH) -> Optional[dict]:
-    conn = init_db(db_path)
+    conn = _get_conn(db_path)
     row  = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-    conn.close()
     return dict(row) if row else None
 
 
@@ -282,13 +299,12 @@ def get_job(job_id: int, db_path: Path = DB_PATH) -> Optional[dict]:
 def update_status(job_id: int, status: str, db_path: Path = DB_PATH) -> None:
     if status not in VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Choose from: {VALID_STATUSES}")
-    conn = init_db(db_path)
+    conn = _get_conn(db_path)
     conn.execute(
         "UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?",
         (status, datetime.now().isoformat(timespec="seconds"), job_id),
     )
     conn.commit()
-    conn.close()
 
 
 def add_application(
@@ -303,7 +319,7 @@ def add_application(
     applied_date = date.today().isoformat()
     follow_up    = date.fromordinal(date.today().toordinal() + follow_up_days).isoformat()
 
-    conn = init_db(db_path)
+    conn = _get_conn(db_path)
     conn.execute(
         """
         INSERT INTO applications (job_id, date_applied, resume_used, cover_note, follow_up_date, notes)
@@ -316,18 +332,16 @@ def add_application(
         (datetime.now().isoformat(timespec="seconds"), job_id),
     )
     conn.commit()
-    conn.close()
     print(f"[tracker] Applied → job_id={job_id}  resume={resume_used}  follow_up={follow_up}")
 
 
 def update_notes(job_id: int, notes: str, db_path: Path = DB_PATH) -> None:
-    conn = init_db(db_path)
+    conn = _get_conn(db_path)
     conn.execute(
         "UPDATE jobs SET notes = ?, updated_at = ? WHERE id = ?",
         (notes, datetime.now().isoformat(timespec="seconds"), job_id),
     )
     conn.commit()
-    conn.close()
 
 
 # Columns that can be edited via update_job()
@@ -348,23 +362,19 @@ def update_job(job_id: int, db_path: Path = DB_PATH, **fields) -> bool:
     to_set["updated_at"] = datetime.now().isoformat(timespec="seconds")
     set_clause = ", ".join(f"{col} = ?" for col in to_set)
     values = list(to_set.values()) + [job_id]
-    conn = init_db(db_path)
+    conn = _get_conn(db_path)
     cursor = conn.execute(f"UPDATE jobs SET {set_clause} WHERE id = ?", values)
     conn.commit()
-    updated = cursor.rowcount > 0
-    conn.close()
-    return updated
+    return cursor.rowcount > 0
 
 
 def delete_job(job_id: int, db_path: Path = DB_PATH) -> bool:
     """Delete a job and its applications. Returns True if a row was deleted."""
-    conn = init_db(db_path)
+    conn = _get_conn(db_path)
     conn.execute("DELETE FROM applications WHERE job_id = ?", (job_id,))
     cursor = conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
     conn.commit()
-    deleted = cursor.rowcount > 0
-    conn.close()
-    return deleted
+    return cursor.rowcount > 0
 
 
 # --- Export -----------------------------------------------------------
@@ -421,7 +431,7 @@ def export_job(job_id: int, dest_dir: Path, db_path: Path = DB_PATH) -> Path:
 def due_for_followup(db_path: Path = DB_PATH) -> list[dict]:
     """Return applications whose follow_up_date is today or in the past."""
     today = date.today().isoformat()
-    conn  = init_db(db_path)
+    conn  = _get_conn(db_path)
     rows  = conn.execute(
         """
         SELECT a.*, j.title, j.company, j.url
@@ -433,5 +443,4 @@ def due_for_followup(db_path: Path = DB_PATH) -> list[dict]:
         """,
         (today,),
     ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]

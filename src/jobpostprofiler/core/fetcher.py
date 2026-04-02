@@ -43,6 +43,29 @@ _BOILERPLATE_RE = re.compile(
 )
 
 
+class FetchContentError(Exception):
+    """Raised when fetched URL content is too poor for extraction."""
+
+    def __init__(
+        self,
+        url: str | None,
+        platform: str | None,
+        signals: list[str],
+        content_length: int,
+    ) -> None:
+        self.url = url
+        self.platform = platform
+        self.signals = signals
+        self.content_length = content_length
+        self.message = (
+            f"Could not extract job content from {url} ({platform or 'unknown platform'}). "
+            f"JS-rendering detected (signals: {', '.join(signals)}). "
+            f"Fetched content: {content_length} chars, no job headings found.\n"
+            f"Workaround: open the URL in your browser, copy the job posting text, and paste it directly."
+        )
+        super().__init__(self.message)
+
+
 @dataclass
 class FetchResult:
     text: str
@@ -119,6 +142,22 @@ def fetch_and_normalize(
 
     result.text = _normalize(result.text)
     return result
+
+
+def check_content_quality(result: FetchResult) -> None:
+    """Raise FetchContentError if a URL fetch yielded unusable content."""
+    if result.input_type != "url":
+        return
+    if not result.signals_triggered:
+        return
+    if _has_job_headings(result.text):
+        return
+    raise FetchContentError(
+        url=result.url,
+        platform=result.source_platform,
+        signals=result.signals_triggered,
+        content_length=len(result.text),
+    )
 
 
 # ---------------------------------------------------------------------------

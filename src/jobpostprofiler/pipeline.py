@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from jobpostprofiler.config import AppConfig
-from jobpostprofiler.core.fetcher import fetch_and_normalize, FetchResult
+from jobpostprofiler.core.fetcher import fetch_and_normalize, FetchResult, check_content_quality, FetchContentError
 from jobpostprofiler.core.classifier import classify_kind
 from jobpostprofiler.core.renderer import render_markdown
 from jobpostprofiler.core.skill_match import compute_match, MatchResult
@@ -65,6 +65,11 @@ def run_pipeline(
     # Step 1: Fetch + Normalize
     # ------------------------------------------------------------------
     fetch_result: FetchResult = fetch_and_normalize(url=url, text=text, filepath=filepath)
+
+    # ------------------------------------------------------------------
+    # Content quality guard (before LLM calls to avoid wasted cost)
+    # ------------------------------------------------------------------
+    check_content_quality(fetch_result)
 
     # ------------------------------------------------------------------
     # Duplicate check (before LLM calls to avoid wasted cost)

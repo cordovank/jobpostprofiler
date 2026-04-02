@@ -5,6 +5,7 @@ Run: streamlit run src/jobpostprofiler/ui/app.py
 import streamlit as st
 from uuid import uuid4
 from jobpostprofiler.config import AppConfig, validate_config
+from jobpostprofiler.core.fetcher import FetchContentError
 from jobpostprofiler.pipeline import run_pipeline, PipelineResult
 from jobpostprofiler.ui.ui_components import (
     render_header,
@@ -442,6 +443,9 @@ with tab_extract:
                     force=force,
                 )
                 st.session_state["result"] = result
+            except FetchContentError as e:
+                st.error(e.message)
+                st.info("Tip: switch to the **Text** tab and paste the job posting content directly.")
             except Exception as e:
                 st.error(f"Pipeline failed: {e}")
 

@@ -57,6 +57,7 @@ def run_pipeline(
     uid: str | None = None,
     force: bool = False,
     cancel: Callable[[], bool] | None = None,
+    on_status: Callable[[str], None] | None = None,
 ) -> PipelineResult:
     """
     Full pipeline: fetch → classify → extract → render → qa → write.
@@ -65,11 +66,16 @@ def run_pipeline(
     cfg = cfg or AppConfig()
     run_id = uid or datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    def _status(msg: str) -> None:
+        if on_status:
+            on_status(msg)
+
     client = client or get_client(base_url=cfg.URL, api_key=cfg.API_KEY)
 
     # ------------------------------------------------------------------
     # Step 1: Fetch + Normalize
     # ------------------------------------------------------------------
+    _status("Fetching and normalizing\u2026")
     fetch_result: FetchResult = fetch_and_normalize(url=url, text=text, filepath=filepath)
 
     # ------------------------------------------------------------------
@@ -98,11 +104,13 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # Step 2: Classify posting kind (pure Python heuristic)
     # ------------------------------------------------------------------
+    _status("Classifying posting kind\u2026")
     kind = classify_kind(fetch_result.text)
 
     # ------------------------------------------------------------------
     # Step 3: Extract structured fields — LLM call #1
     # ------------------------------------------------------------------
+    _status("Extracting structured fields (LLM)\u2026")
     if cancel and cancel():
         raise PipelineCancelled("Cancelled before extraction.")
     extracted_at = datetime.now().strftime("%d %b %Y").lstrip("0")
@@ -134,11 +142,13 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # Step 4: Render markdown (pure Python / Jinja2)
     # ------------------------------------------------------------------
+    _status("Rendering markdown\u2026")
     markdown = render_markdown(extract)
 
     # ------------------------------------------------------------------
     # Step 5: QA audit — LLM call #2
     # ------------------------------------------------------------------
+    _status("Running QA audit (LLM)\u2026")
     if cancel and cancel():
         raise PipelineCancelled("Cancelled before QA audit.")
     qa_msg = QA_USER_TEMPLATE.format(
@@ -158,6 +168,7 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # Step 6: Skill match (pure Python, no LLM call)
     # ------------------------------------------------------------------
+    _status("Computing skill match\u2026")
     match_result: MatchResult | None = None
     skills_path = SKILLS_PATH
     if skills_path.exists():
@@ -185,6 +196,7 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # Step 7: Add tracker
     # ------------------------------------------------------------------
+    _status("Saving to tracker\u2026")
     job_id: int | None = None
     try:
         from jobpostprofiler.db.store import save_job_from_extract

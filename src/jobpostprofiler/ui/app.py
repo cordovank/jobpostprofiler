@@ -436,6 +436,10 @@ with tab_extract:
     if analyze_btn and ok:
         cancel_event = threading.Event()
         container = {"result": None, "error": None}
+        status_msg = {"text": "Starting\u2026"}
+
+        def _update_status(msg: str) -> None:
+            status_msg["text"] = msg
 
         def _run():
             try:
@@ -446,6 +450,7 @@ with tab_extract:
                     uid=str(uuid4()),
                     force=force,
                     cancel=cancel_event.is_set,
+                    on_status=_update_status,
                 )
             except Exception as exc:
                 container["error"] = exc
@@ -464,7 +469,7 @@ with tab_extract:
                 cancel_event.set()
                 status.info("Cancelling…")
             else:
-                status.info("Fetching and extracting…")
+                status.info(status_msg["text"])
             tick += 1
             time.sleep(0.3)
 

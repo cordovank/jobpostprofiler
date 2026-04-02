@@ -16,8 +16,7 @@ from typing import Optional
 
 # --- Config -----------------------------------------------------------
 
-# Repo root — two levels up from src/jobpostprofiler/db/store.py
-DB_PATH = Path(__file__).resolve().parents[3] / "jobs.db"
+from jobpostprofiler.config import DB_PATH
 
 VALID_STATUSES = {
     "found",

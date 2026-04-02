@@ -2,7 +2,13 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 import os
+from pathlib import Path
 from dotenv import load_dotenv
+
+# Repo root: two levels up from src/jobpostprofiler/config.py
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SKILLS_PATH = REPO_ROOT / "my_skills.json"
+DB_PATH = REPO_ROOT / "jobs.db"
 
 load_dotenv(override=True)
 

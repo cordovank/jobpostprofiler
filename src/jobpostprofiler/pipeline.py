@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from jobpostprofiler.config import AppConfig
+from jobpostprofiler.config import AppConfig, SKILLS_PATH
 from jobpostprofiler.core.fetcher import fetch_and_normalize, FetchResult, check_content_quality, FetchContentError
 from jobpostprofiler.core.classifier import classify_kind
 from jobpostprofiler.core.renderer import render_markdown
@@ -159,7 +159,7 @@ def run_pipeline(
     # Step 6: Skill match (pure Python, no LLM call)
     # ------------------------------------------------------------------
     match_result: MatchResult | None = None
-    skills_path = Path(__file__).resolve().parents[2] / "my_skills.json"
+    skills_path = SKILLS_PATH
     if skills_path.exists():
         user_profile = json.loads(skills_path.read_text(encoding="utf-8"))
         user_skills  = user_profile.get("skills", [])

@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any, Tuple
 import json
 from pathlib import Path
 import streamlit as st
+from jobpostprofiler.config import SKILLS_PATH
 
 
 @dataclass
@@ -261,7 +262,7 @@ def _render_job_detail(job: Dict[str, Any]) -> None:
         pref_skills = skills.get("preferred", []) if isinstance(skills, dict) else []
 
         # Reconstruct a MatchResult from stored data for render_match_score
-        user_skills_path = Path(__file__).resolve().parents[2] / "my_skills.json"
+        user_skills_path = SKILLS_PATH
         if user_skills_path.exists():
             try:
                 from jobpostprofiler.core.skill_match import compute_match

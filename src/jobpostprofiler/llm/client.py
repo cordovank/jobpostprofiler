@@ -36,6 +36,7 @@ def structured_call(
     user_message: str,
     output_type: Type[T],
     temperature: float = 0.0,
+    max_retries: int = 1,
 ) -> T:
     """
     Single LLM call that returns a validated Pydantic model.
@@ -43,7 +44,8 @@ def structured_call(
     Strategy:
       1. Ask model to respond ONLY with JSON matching the schema.
       2. Parse and validate with Pydantic.
-      3. On parse failure: raise ValueError with raw content for debugging.
+      3. On parse failure: retry once with error feedback.
+      4. If retry also fails: raise ValueError with both raw outputs.
 
     Temperature=0 by default — extraction is not a creative task.
     """
@@ -68,7 +70,57 @@ def structured_call(
         temperature=temperature,
     )
 
-    raw = (resp.choices[0].message.content or "").strip()
+    raw = _clean_llm_json(resp.choices[0].message.content or "")
+
+    try:
+        data = json.loads(raw)
+        return output_type.model_validate(data)
+    except Exception as first_exc:
+        if max_retries < 1:
+            raise ValueError(
+                f"LLM output failed validation for {output_type.__name__}.\n"
+                f"Error: {first_exc}\n"
+                f"Raw output:\n{raw}"
+            ) from first_exc
+
+        first_raw = raw
+        print(f"[structured_call] Validation failed, retrying with error feedback: {first_exc}")
+
+        retry_message = (
+            f"Your previous response failed validation.\n\n"
+            f"ORIGINAL REQUEST:\n{user_message}\n\n"
+            f"YOUR PREVIOUS OUTPUT:\n{first_raw}\n\n"
+            f"VALIDATION ERROR:\n{first_exc}\n\n"
+            f"Fix the JSON to match the schema. Respond with ONLY the corrected JSON."
+        )
+
+        retry_resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": full_system},
+                {"role": "user", "content": retry_message},
+            ],
+            temperature=temperature,
+        )
+
+        retry_raw = _clean_llm_json(retry_resp.choices[0].message.content or "")
+
+        try:
+            data = json.loads(retry_raw)
+            return output_type.model_validate(data)
+        except Exception as retry_exc:
+            raise ValueError(
+                f"LLM output failed validation for {output_type.__name__} after retry.\n"
+                f"First error: {first_exc}\n"
+                f"First raw output:\n{first_raw}\n\n"
+                f"Retry error: {retry_exc}\n"
+                f"Retry raw output:\n{retry_raw}"
+            ) from retry_exc
+
+
+def _clean_llm_json(content: str) -> str:
+    """Strip markdown fences and extract the last JSON object from LLM output."""
+    raw = content.strip()
 
     # Strip markdown fences if model adds them despite instructions
     if raw.startswith("```"):
@@ -78,18 +130,7 @@ def structured_call(
         raw = raw.strip()
 
     # If multiple JSON objects present, take the last one.
-    # Handles models that echo the schema before outputting the extraction.
-    raw = _extract_last_json_object(raw)
-
-    try:
-        data = json.loads(raw)
-        return output_type.model_validate(data)
-    except Exception as exc:
-        raise ValueError(
-            f"LLM output failed validation for {output_type.__name__}.\n"
-            f"Error: {exc}\n"
-            f"Raw output:\n{raw}"
-        ) from exc
+    return _extract_last_json_object(raw)
 
 def _extract_last_json_object(text: str) -> str:
     """Find the last valid top-level JSON object in a string.

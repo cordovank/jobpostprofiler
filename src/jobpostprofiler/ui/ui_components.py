@@ -411,15 +411,7 @@ def render_tracker_tab() -> None:
 
         new_notes = st.text_area("Notes", value=job.get("notes") or "", height=80)
 
-        save_col, del_col = st.columns([3, 1])
-        with save_col:
-            saved = st.form_submit_button("Save changes")
-        with del_col:
-            deleted = st.form_submit_button(
-                "Delete",
-                type="secondary",
-                help="Permanently delete this job record.",
-            )
+        saved = st.form_submit_button("Save changes")
 
     if saved:
         fields: dict = {}
@@ -444,7 +436,28 @@ def render_tracker_tab() -> None:
         else:
             st.caption("No changes detected.")
 
-    if deleted:
-        delete_job(selected_id)
-        st.caption(f"Deleted job #{selected_id}.")
-        st.rerun()
+    # ── Delete (two-step confirmation) ──
+    delete_key = f"confirm_delete_{selected_id}"
+
+    if not st.session_state.get(delete_key, False):
+        if st.button(
+            "Delete this job",
+            type="secondary",
+            key=f"del_init_{selected_id}",
+        ):
+            st.session_state[delete_key] = True
+            st.rerun()
+    else:
+        label = f"{job.get('company') or '?'} — {job.get('title') or '?'}"
+        st.warning(f"Permanently delete **{label}**? This cannot be undone.")
+        col_yes, col_no, _ = st.columns([1, 1, 2])
+        with col_yes:
+            if st.button("Yes, delete", type="primary",
+                         key=f"del_confirm_{selected_id}"):
+                delete_job(selected_id)
+                st.session_state.pop(delete_key, None)
+                st.rerun()
+        with col_no:
+            if st.button("Cancel", key=f"del_cancel_{selected_id}"):
+                st.session_state.pop(delete_key, None)
+                st.rerun()

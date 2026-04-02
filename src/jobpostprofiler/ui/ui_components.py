@@ -226,6 +226,72 @@ def render_match_score(match_result, qa_json: Optional[Dict] = None) -> None:
                 )
 
 
+def _render_job_detail(job: Dict[str, Any]) -> None:
+    """Render stored pipeline output for a tracked job."""
+    extract_json: Dict[str, Any] | None = None
+    qa_json: Dict[str, Any] | None = None
+
+    raw_extract = job.get("extract_json") or ""
+    raw_qa = job.get("qa_json") or ""
+
+    if raw_extract:
+        try:
+            extract_json = json.loads(raw_extract)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if raw_qa:
+        try:
+            qa_json = json.loads(raw_qa)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if not extract_json:
+        st.caption("No stored extraction data for this job.")
+        return
+
+    # Skill match score (from DB, not recomputed)
+    match_score = job.get("match_score")
+    if match_score is not None:
+        from jobpostprofiler.core.skill_match import MatchResult
+
+        skills = extract_json.get("skills", {})
+        req_skills = skills.get("required", []) if isinstance(skills, dict) else []
+        pref_skills = skills.get("preferred", []) if isinstance(skills, dict) else []
+
+        # Reconstruct a MatchResult from stored data for render_match_score
+        user_skills_path = Path(__file__).resolve().parents[2] / "my_skills.json"
+        if user_skills_path.exists():
+            try:
+                from jobpostprofiler.core.skill_match import compute_match
+                user_profile = json.loads(user_skills_path.read_text(encoding="utf-8"))
+                user_skills = user_profile.get("skills", [])
+                bridgeable = {s.lower().strip() for s in user_profile.get("bridgeable", [])}
+                if user_skills:
+                    match_result = compute_match(
+                        user_skills=user_skills,
+                        required_skills=req_skills,
+                        preferred_skills=pref_skills,
+                    )
+                    match_result._req_bridgeable = [
+                        s for s in match_result.required_missing
+                        if s.lower().strip() in bridgeable
+                    ]
+                    match_result._pref_bridgeable = [
+                        s for s in match_result.preferred_missing
+                        if s.lower().strip() in bridgeable
+                    ]
+                    render_match_score(match_result, qa_json=qa_json)
+            except Exception:
+                pass
+
+    render_outputs(
+        summary_md=job.get("markdown_rendered"),
+        extract_json=extract_json,
+        qa_json=qa_json,
+    )
+
+
 def render_tracker_tab() -> None:
     """Render the job tracker pipeline view."""
     from jobpostprofiler.db.store import (
@@ -307,8 +373,21 @@ def render_tracker_tab() -> None:
     if not job:
         return
 
-    # ── Edit panel ────────────────────────────────────────────────────────
+    # ── View / Edit toggle ───────────────────────────────────────────────
     st.html('<div style="margin-top:0.5rem;"></div>')
+    panel_mode = st.radio(
+        "Panel mode",
+        options=["View", "Edit"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key=f"panel_mode_{selected_id}",
+    )
+
+    if panel_mode == "View":
+        _render_job_detail(job)
+        return
+
+    # ── Edit panel ────────────────────────────────────────────────────────
 
     statuses = sorted(VALID_STATUSES)
     channels = ["builtin", "dice", "direct", "hiringcafe", "indeed", "linkedin", "towardsaijobs", "upwork", "wellfound", "yc", "other"]

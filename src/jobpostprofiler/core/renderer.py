@@ -288,6 +288,10 @@ The following fields were absent from the posting:
 
 _env = Environment(loader=BaseLoader(), trim_blocks=True, lstrip_blocks=True)
 
+_EMPLOYMENT_TMPL = _env.from_string(EMPLOYMENT_TEMPLATE)
+_FREELANCE_TMPL = _env.from_string(FREELANCE_TEMPLATE)
+_INTERNSHIP_TMPL = _env.from_string(INTERNSHIP_TEMPLATE)
+
 
 def render_markdown(extract: PostingExtract) -> str:
     """
@@ -297,26 +301,25 @@ def render_markdown(extract: PostingExtract) -> str:
     kind = extract.posting_kind
     
     if kind == "employment":
-        template_str = EMPLOYMENT_TEMPLATE
+        tmpl = _EMPLOYMENT_TMPL
         title_parts = [
             extract.details.role.job_title,
             extract.details.company.name,
         ]
         title_line = " @ ".join(p for p in title_parts if p) or "Job Posting"
     elif kind == "internship":
-        template_str = INTERNSHIP_TEMPLATE
+        tmpl = _INTERNSHIP_TMPL
         title_parts = [
             extract.details.role.job_title or "Internship",
             extract.details.company.name,
         ]
         title_line = " @ ".join(p for p in title_parts if p) or "Internship Posting"
     else:
-        template_str = FREELANCE_TEMPLATE
+        tmpl = _FREELANCE_TMPL
         title_line = extract.details.title or "Freelance Posting"
         if extract.details.platform:
             title_line += f" ({extract.details.platform})"
 
-    tmpl = _env.from_string(template_str)
     return tmpl.render(
         title_line=title_line,
         source=extract.source,

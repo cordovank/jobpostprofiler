@@ -28,6 +28,18 @@ def get_client(*, base_url: str | None, api_key: str) -> OpenAI:
     return _client_cache[key]
 
 
+_schema_cache: dict[type, str] = {}
+
+
+def _get_schema_str(output_type: type[BaseModel]) -> str:
+    """Cache serialized JSON schema per model class."""
+    if output_type not in _schema_cache:
+        _schema_cache[output_type] = json.dumps(
+            output_type.model_json_schema(), indent=2
+        )
+    return _schema_cache[output_type]
+
+
 def structured_call(
     *,
     client: OpenAI,
@@ -49,7 +61,7 @@ def structured_call(
 
     Temperature=0 by default — extraction is not a creative task.
     """
-    schema_str = json.dumps(output_type.model_json_schema(), indent=2)
+    schema_str = _get_schema_str(output_type)
 
     full_system = (
         f"{system_prompt}\n\n"

@@ -377,8 +377,9 @@ def _is_js_shell(content: str, signals: list[str]) -> bool:
     if len(content) < _JS_SHELL_MIN_LENGTH:
         signals.append(f"content_too_short:{len(content)}")
         triggered = True
+    lower_content = content.lower()
     for sig in _JS_SHELL_SIGNALS:
-        if sig.lower() in content.lower():
+        if sig in lower_content:
             signals.append(f"js_signal:{sig}")
             triggered = True
     return triggered

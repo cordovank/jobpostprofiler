@@ -12,14 +12,12 @@ Usage:
     python tracker_cli.py notes <job_id> "Great team, async culture"
     python tracker_cli.py followup                  # what needs attention
     python tracker_cli.py export                    # weekly Markdown report
-    python tracker_cli.py save <output_dir>         # load a run into DB
-    python tracker_cli.py save <output_dir> --channel wellfound
-    python tracker_cli.py save output/{run_id}/ --channel wellfound
-    python tracker_cli.py show <job_id>                     # full detail view
-    python tracker_cli.py show <job_id> --full              # include full JD text
+    python tracker_cli.py export-job <job_id>       # export artifacts to files
+    python tracker_cli.py show <job_id>             # full detail view
+    python tracker_cli.py show <job_id> --full      # include full JD text
     python tracker_cli.py edit <job_id> --title "New Title" --salary "$120K"
-    python tracker_cli.py delete <job_id>                   # with confirmation
-    python tracker_cli.py delete <job_id> -y                # skip confirmation
+    python tracker_cli.py delete <job_id>           # with confirmation
+    python tracker_cli.py delete <job_id> -y        # skip confirmation
 """
 
 import argparse
@@ -37,11 +35,11 @@ from jobpostprofiler.db.store import (
     add_application,
     delete_job,
     due_for_followup,
+    export_job,
     get_job,
     init_db,
     list_jobs,
     search_jobs,
-    save_job_from_output_dir,
     update_job,
     update_notes,
     update_status,
@@ -287,18 +285,15 @@ def cmd_export(args):
         print(output)
 
 
-def cmd_save(args):
-    """Load a completed pipeline run into the DB."""
-    output_dir = Path(args.dir)
-    if not output_dir.exists():
-        print(f"Directory not found: {output_dir}")
-        return
-    job_id = save_job_from_output_dir(
-        output_dir=output_dir,
-        source_channel=args.channel,
-    )
-    print(f"  ✓ Saved as job_id={job_id}")
-    print(f"  → To log an application: python tracker_cli.py apply {job_id} --resume ML")
+def cmd_export_job(args):
+    """Export a job's artifacts to a directory from the DB."""
+    dest = Path(args.dest) if args.dest else Path("export") / str(args.job_id)
+    try:
+        export_job(job_id=args.job_id, dest_dir=dest)
+        print(f"  ✓ Exported job_id={args.job_id} → {dest}")
+    except ValueError as e:
+        print(f"  ✗ {e}")
+
 
 
 def cmd_delete(args):
@@ -438,11 +433,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_export = sub.add_parser("export", help="Generate Markdown report")
     p_export.add_argument("--out", default=None, help="Write to file path (default: stdout)")
 
-    # save
-    p_save = sub.add_parser("save", help="Load a pipeline run into the DB")
-    p_save.add_argument("dir", help="Path to output/{run_id}/ directory")
-    p_save.add_argument("--channel", default="other",
-                        choices=["wellfound","yc","linkedin","direct","other"])
+    # export-job
+    p_export_job = sub.add_parser("export-job", help="Export a job's artifacts to files")
+    p_export_job.add_argument("job_id", type=int)
+    p_export_job.add_argument("--dest", default=None, help="Destination directory (default: ./export/<job_id>/)")
 
     # delete
     p_delete = sub.add_parser("delete", help="Delete a job record")
@@ -487,8 +481,8 @@ def main():
         "update":   cmd_update,
         "notes":    cmd_notes,
         "followup": cmd_followup,
-        "export":   cmd_export,
-        "save":     cmd_save,
+        "export":      cmd_export,
+        "export-job":  cmd_export_job,
         "delete":   cmd_delete,
         "edit":     cmd_edit,
         "rescore": cmd_rescore,

@@ -35,7 +35,7 @@ class PipelineResult:
     markdown: str
     qa: QAReport
     run_id: str
-    output_dir: Path
+    job_id: int | None = None
     match_result: MatchResult | None = None
 
 
@@ -58,8 +58,6 @@ def run_pipeline(
     """
     cfg = cfg or AppConfig()
     run_id = uid or datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = Path(cfg.output_dir) / run_id
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     client = client or get_client(base_url=cfg.URL, api_key=cfg.API_KEY)
 
@@ -67,7 +65,6 @@ def run_pipeline(
     # Step 1: Fetch + Normalize
     # ------------------------------------------------------------------
     fetch_result: FetchResult = fetch_and_normalize(url=url, text=text, filepath=filepath)
-    _write(output_dir / "normalized_job_post.txt", fetch_result.text)
 
     # ------------------------------------------------------------------
     # Duplicate check (before LLM calls to avoid wasted cost)
@@ -91,7 +88,6 @@ def run_pipeline(
     # Step 2: Classify posting kind (pure Python heuristic)
     # ------------------------------------------------------------------
     kind = classify_kind(fetch_result.text)
-    _write(output_dir / "posting_kind.json", json.dumps({"kind": kind, "warnings": []}, indent=2))
 
     # ------------------------------------------------------------------
     # Step 3: Extract structured fields — LLM call #1
@@ -101,7 +97,7 @@ def run_pipeline(
         extracted_at=extracted_at,
         input_type=fetch_result.input_type if fetch_result.input_type in ("url", "text") else "text",
         url=fetch_result.url,
-        file_path=fetch_result.file_path or str(output_dir / "normalized_job_post.txt"),
+        file_path=fetch_result.file_path or f"db://jobs/{run_id}",
         source_platform=fetch_result.source_platform,
     )
 
@@ -121,13 +117,11 @@ def run_pipeline(
         output_type=PostingExtract, 
         temperature=0.0,
     )
-    _write(output_dir / "job_extract.json", extract.model_dump_json(indent=2))
 
     # ------------------------------------------------------------------
     # Step 4: Render markdown (pure Python / Jinja2)
     # ------------------------------------------------------------------
     markdown = render_markdown(extract)
-    _write(output_dir / "job_summary.md", markdown)
 
     # ------------------------------------------------------------------
     # Step 5: QA audit — LLM call #2
@@ -145,7 +139,6 @@ def run_pipeline(
         output_type=QAReport, 
         temperature=0.0,
     )
-    _write(output_dir / "quality_report.json", qa.model_dump_json(indent=2))
 
     # ------------------------------------------------------------------
     # Step 6: Skill match (pure Python, no LLM call)
@@ -177,15 +170,19 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # Step 7: Add tracker
     # ------------------------------------------------------------------
+    job_id: int | None = None
     try:
         from jobpostprofiler.db.store import save_job_from_extract
-        save_job_from_extract(
+        job_id = save_job_from_extract(
             extract=extract.model_dump(),
             qa_report=qa.model_dump(),
             run_id=run_id,
             normalized_text=fetch_result.text,
             source_channel=os.getenv("SOURCE_CHANNEL", "other"),
             match_score=match_result.overall_score if match_result else None,
+            extract_json=extract.model_dump_json(indent=2),
+            markdown_rendered=markdown,
+            qa_json=qa.model_dump_json(indent=2),
         )
     except Exception as _tracker_err:
         # Tracker failure never breaks the pipeline
@@ -196,14 +193,8 @@ def run_pipeline(
         markdown=markdown,
         qa=qa,
         run_id=run_id,
-        output_dir=output_dir,
+        job_id=job_id,
         match_result=match_result,
     )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _write(path: Path, content: str) -> None:
-    path.write_text(content, encoding="utf-8")

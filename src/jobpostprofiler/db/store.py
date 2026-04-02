@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     qa_issues       TEXT,       -- JSON array
     jd_text         TEXT,       -- normalized posting text (from fetcher)
     match_score     REAL,       -- 0.0–1.0 skill match score
+    extract_json    TEXT,       -- full PostingExtract JSON
+    markdown_rendered TEXT,     -- precomputed render_markdown() output
+    qa_json         TEXT,       -- full QAReport JSON
     notes           TEXT,
     created_at      TEXT DEFAULT (datetime('now'))
 );
@@ -79,7 +82,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
     if "match_score" not in cols:
         conn.execute("ALTER TABLE jobs ADD COLUMN match_score REAL")
-        conn.commit()
+    if "extract_json" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN extract_json TEXT")
+    if "markdown_rendered" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN markdown_rendered TEXT")
+    if "qa_json" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN qa_json TEXT")
+    conn.commit()
 
 
 def init_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
@@ -140,19 +149,25 @@ def save_job_from_extract(
     source_channel: str = "other",
     db_path: Path = DB_PATH,
     match_score: float | None = None,
+    extract_json: str = "",
+    markdown_rendered: str = "",
+    qa_json: str = "",
 ) -> int:
     """
     Insert a job record from a PostingExtract dict (job_extract.json content).
     Returns the new row id.
 
     Args:
-        extract:         PostingExtract.model_dump() result
-        qa_report:       QAReport.model_dump() result
-        run_id:          Pipeline run_id (correlation key)
-        normalized_text: Contents of normalized_job_post.txt (optional)
-        source_channel:  wellfound | yc | linkedin | direct | other
-        db_path:         Override for testing
-        match_score:     Skill match score (0.0–1.0), or None if unavailable
+        extract:           PostingExtract.model_dump() result
+        qa_report:         QAReport.model_dump() result
+        run_id:            Pipeline run_id (correlation key)
+        normalized_text:   Contents of normalized_job_post.txt (optional)
+        source_channel:    wellfound | yc | linkedin | direct | other
+        db_path:           Override for testing
+        match_score:       Skill match score (0.0–1.0), or None if unavailable
+        extract_json:      Full PostingExtract JSON string
+        markdown_rendered: Precomputed markdown summary
+        qa_json:           Full QAReport JSON string
     """
     details  = extract.get("details") or {}
     skills   = extract.get("skills") or {}
@@ -175,9 +190,12 @@ def save_job_from_extract(
         "status":           "found",
         "qa_passed":        1 if qa_report.get("passed") else 0,
         "qa_issues":        json.dumps(qa_report.get("issues") or []),
-        "match_score":      match_score,
-        "jd_text":          normalized_text,
-        "notes":            None,
+        "match_score":       match_score,
+        "jd_text":           normalized_text,
+        "extract_json":      extract_json,
+        "markdown_rendered": markdown_rendered,
+        "qa_json":           qa_json,
+        "notes":             None,
     }
 
     conn    = init_db(db_path)
@@ -187,12 +205,12 @@ def save_job_from_extract(
             run_id, url, title, company, location, remote_policy,
             employment_type, salary_range, required_skills, preferred_skills,
             source_channel, date_found, status, qa_passed, qa_issues,
-            match_score, jd_text, notes
+            match_score, jd_text, extract_json, markdown_rendered, qa_json, notes
         ) VALUES (
             :run_id, :url, :title, :company, :location, :remote_policy,
             :employment_type, :salary_range, :required_skills, :preferred_skills,
             :source_channel, :date_found, :status, :qa_passed, :qa_issues,
-            :match_score, :jd_text, :notes
+            :match_score, :jd_text, :extract_json, :markdown_rendered, :qa_json, :notes
         )
         """,
         row,
@@ -203,36 +221,6 @@ def save_job_from_extract(
     print(f"[tracker] Saved → jobs.id={job_id}  {row['company']} | {row['title']}")
     return job_id
 
-
-def save_job_from_output_dir(
-    output_dir: Path,
-    source_channel: str = "other",
-    db_path: Path = DB_PATH,
-) -> int:
-    """
-    Convenience loader: given a pipeline output/{run_id}/ directory,
-    read the standard output files and call save_job_from_extract().
-    """
-    extract_path = output_dir / "job_extract.json"
-    qa_path      = output_dir / "quality_report.json"
-    norm_path    = output_dir / "normalized_job_post.txt"
-
-    if not extract_path.exists():
-        raise FileNotFoundError(f"job_extract.json not found in {output_dir}")
-
-    extract         = json.loads(extract_path.read_text(encoding="utf-8"))
-    qa_report       = json.loads(qa_path.read_text(encoding="utf-8")) if qa_path.exists() else {}
-    normalized_text = norm_path.read_text(encoding="utf-8") if norm_path.exists() else ""
-    run_id          = output_dir.name
-
-    return save_job_from_extract(
-        extract=extract,
-        qa_report=qa_report,
-        run_id=run_id,
-        normalized_text=normalized_text,
-        source_channel=source_channel,
-        db_path=db_path,
-    )
 
 
 # --- Read -------------------------------------------------------------
@@ -365,6 +353,55 @@ def delete_job(job_id: int, db_path: Path = DB_PATH) -> bool:
     deleted = cursor.rowcount > 0
     conn.close()
     return deleted
+
+
+# --- Export -----------------------------------------------------------
+
+def export_job(job_id: int, dest_dir: Path, db_path: Path = DB_PATH) -> Path:
+    """Export a job's artifacts to a directory from DB columns.
+
+    Creates dest_dir/ with normalized_job_post.txt, job_extract.json,
+    job_summary.md, quality_report.json, and posting_kind.json.
+    Returns dest_dir. Raises ValueError if job not found or artifacts missing.
+    """
+    job = get_job(job_id, db_path)
+    if not job:
+        raise ValueError(f"Job id={job_id} not found.")
+    if not job.get("extract_json"):
+        raise ValueError(
+            f"Job id={job_id} has no stored extract_json (legacy row). Cannot export."
+        )
+
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    # normalized_job_post.txt
+    (dest_dir / "normalized_job_post.txt").write_text(
+        job.get("jd_text") or "", encoding="utf-8"
+    )
+    # job_extract.json
+    (dest_dir / "job_extract.json").write_text(
+        job["extract_json"], encoding="utf-8"
+    )
+    # job_summary.md
+    (dest_dir / "job_summary.md").write_text(
+        job.get("markdown_rendered") or "", encoding="utf-8"
+    )
+    # quality_report.json
+    (dest_dir / "quality_report.json").write_text(
+        job.get("qa_json") or "", encoding="utf-8"
+    )
+    # posting_kind.json — derived from extract_json
+    try:
+        extract_data = json.loads(job["extract_json"])
+        kind = extract_data.get("details", {}).get("kind", "employment")
+    except (json.JSONDecodeError, TypeError):
+        kind = "employment"
+    (dest_dir / "posting_kind.json").write_text(
+        json.dumps({"kind": kind, "warnings": []}, indent=2), encoding="utf-8"
+    )
+
+    return dest_dir
 
 
 # --- Follow-up helpers ------------------------------------------------

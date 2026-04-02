@@ -4,7 +4,6 @@ Run: streamlit run src/jobpostprofiler/ui/app.py
 """
 import streamlit as st
 from uuid import uuid4
-from pathlib import Path
 from jobpostprofiler.config import AppConfig, validate_config
 from jobpostprofiler.pipeline import run_pipeline, PipelineResult
 from jobpostprofiler.ui.ui_components import (
@@ -444,9 +443,6 @@ with tab_extract:
                 )
                 st.session_state["result"] = result
             except Exception as e:
-                OUTPUT_DIR = Path("output") / Path(run_id)
-                OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-                (OUTPUT_DIR / "error.txt").write_text(str(e), encoding="utf-8")
                 st.error(f"Pipeline failed: {e}")
 
     result: PipelineResult | None = st.session_state.get("result")

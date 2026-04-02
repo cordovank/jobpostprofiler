@@ -39,7 +39,7 @@ def main():
     result = run_pipeline(text=EXAMPLE_TEXT, cfg=cfg)
     
     print(f"\nRun ID: {result.run_id}")
-    print(f"Output dir: {result.output_dir}")
+    print(f"Job ID: {result.job_id}")
     print(f"QA passed: {result.qa.passed}")
 
     if result.qa.issues:

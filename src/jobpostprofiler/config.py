@@ -10,7 +10,6 @@ load_dotenv(override=True)
 @dataclass(frozen=True)
 class AppConfig:
     provider:       str       = field(default_factory=lambda: os.getenv("SELECTED_PROVIDER", "OLLAMA"))
-    output_dir:     str       = field(default_factory=lambda: os.getenv("OUTPUT_DIR", "output"))
     source_channel: str       = field(default_factory=lambda: os.getenv("SOURCE_CHANNEL", "other"))
     model_override: str|None  = None
     URL:            str|None  = field(init=False, default=None)

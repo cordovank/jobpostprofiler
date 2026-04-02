@@ -92,37 +92,28 @@ def structured_call(
         ) from exc
 
 def _extract_last_json_object(text: str) -> str:
-    """
-    Find the last top-level JSON object in a string.
-    Handles models that prepend schema or commentary before the actual output.
-    """
-    last_start = text.rfind("{")
-    if last_start == -1:
-        return text
+    """Find the last valid top-level JSON object in a string.
 
-    # Walk back to find the outermost { that contains the last }
-    depth = 0
-    last_end = -1
-    for i in range(len(text) - 1, -1, -1):
-        if text[i] == "}":
-            depth += 1
-        elif text[i] == "{":
-            depth -= 1
-        if depth == 0 and text[i] == "{":
-            last_end = i
+    Uses json.JSONDecoder.raw_decode() so braces inside string values
+    are handled correctly — unlike the previous depth-counter approach.
+    """
+    decoder = json.JSONDecoder()
+    last_valid = None
+    i = 0
+    while i < len(text):
+        idx = text.find("{", i)
+        if idx == -1:
             break
-
-    # Scan forward from last_end to find the matching close brace
-    depth = 0
-    for i in range(last_end, len(text)):
-        if text[i] == "{":
-            depth += 1
-        elif text[i] == "}":
-            depth -= 1
-        if depth == 0:
-            return text[last_end:i + 1]
-
-    return text
+        try:
+            obj, end = decoder.raw_decode(text, idx)
+            if isinstance(obj, dict):
+                last_valid = text[idx:end]
+                i = end
+            else:
+                i = idx + 1
+        except json.JSONDecodeError:
+            i = idx + 1
+    return last_valid if last_valid is not None else text
 
 def plain_call(
     *,

@@ -127,6 +127,16 @@ class MatchResult:
     overall_score: float     # 0.0 – 1.0, weighted
 
 
+def _dedup_skills(skills: list[str]) -> list[str]:
+    """Normalize through alias map and deduplicate, preserving first occurrence's original casing."""
+    seen: dict[str, str] = {}  # canonical → original
+    for s in skills:
+        canonical = _normalize(s)
+        if canonical not in seen:
+            seen[canonical] = s
+    return list(seen.values())
+
+
 def compute_match(
     user_skills: list[str],
     required_skills: list[str],
@@ -146,6 +156,9 @@ def compute_match(
     Returns:
         MatchResult with matched/missing lists and scores.
     """
+    required_skills = _dedup_skills(required_skills)
+    preferred_skills = _dedup_skills(preferred_skills)
+
     user_set = {_normalize(s) for s in user_skills}
 
     req_matched  = [s for s in required_skills  if _normalize(s) in user_set]

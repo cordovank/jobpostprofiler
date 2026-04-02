@@ -187,6 +187,11 @@ def _from_file(filepath: str) -> FetchResult:
     )
 
 
+def _prefer_selenium(scrape_len: int, selenium_len: int) -> bool:
+    """Return True if Selenium output is substantially longer (3x) than scrape."""
+    return selenium_len >= scrape_len * 3
+
+
 def _from_url(url: str) -> FetchResult:
     signals: list[str] = []
     warnings: list[str] = []
@@ -197,12 +202,12 @@ def _from_url(url: str) -> FetchResult:
     if _is_js_shell(raw, signals):
         # --- Attempt 2: Selenium fallback ---
         selenium_raw = _scrape_selenium(url)
-        if selenium_raw and len(selenium_raw) > len(raw) and _has_job_headings(selenium_raw):
+        if selenium_raw and _prefer_selenium(len(raw), len(selenium_raw)):
             raw = selenium_raw
             method = "selenium"
         else:
             method = "scrape"
-            warnings.append("JS-shell signals triggered but Selenium output not preferred; using scrape output.")
+            warnings.append(f"JS-shell detected but Selenium content not substantially longer (scrape={len(raw)}, selenium={len(selenium_raw)}); using scrape output.")
     else:
         method = "scrape"
 
@@ -255,10 +260,21 @@ def _scrape_selenium(url: str) -> str:
         driver = webdriver.Chrome(options=opts)
         try:
             driver.get(url)
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-            return driver.find_element(By.TAG_NAME, "body").text
+            import time
+            body = driver.find_element(By.TAG_NAME, "body")
+            prev_len = 0
+            stable_ticks = 0
+            for _ in range(10):          # max 10 seconds
+                time.sleep(1)
+                cur_len = len(body.text)
+                if cur_len > 0 and cur_len == prev_len:
+                    stable_ticks += 1
+                    if stable_ticks >= 2:  # stable for 2 consecutive seconds
+                        break
+                else:
+                    stable_ticks = 0
+                prev_len = cur_len
+            return body.text
         finally:
             driver.quit()
     except Exception:

@@ -10,7 +10,7 @@ No LLM dependencies. Pure Python + sqlite3.
 
 import sqlite3
 import json
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     markdown_rendered TEXT,     -- precomputed render_markdown() output
     qa_json         TEXT,       -- full QAReport JSON
     notes           TEXT,
-    created_at      TEXT DEFAULT (datetime('now'))
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS applications (
@@ -87,6 +88,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE jobs ADD COLUMN markdown_rendered TEXT")
     if "qa_json" not in cols:
         conn.execute("ALTER TABLE jobs ADD COLUMN qa_json TEXT")
+    if "updated_at" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN updated_at TEXT")
     conn.commit()
 
 
@@ -280,7 +283,10 @@ def update_status(job_id: int, status: str, db_path: Path = DB_PATH) -> None:
     if status not in VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Choose from: {VALID_STATUSES}")
     conn = init_db(db_path)
-    conn.execute("UPDATE jobs SET status = ? WHERE id = ?", (status, job_id))
+    conn.execute(
+        "UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?",
+        (status, datetime.now().isoformat(timespec="seconds"), job_id),
+    )
     conn.commit()
     conn.close()
 
@@ -305,7 +311,10 @@ def add_application(
         """,
         (job_id, applied_date, resume_used, cover_note, follow_up, notes),
     )
-    conn.execute("UPDATE jobs SET status = 'applied' WHERE id = ?", (job_id,))
+    conn.execute(
+        "UPDATE jobs SET status = 'applied', updated_at = ? WHERE id = ?",
+        (datetime.now().isoformat(timespec="seconds"), job_id),
+    )
     conn.commit()
     conn.close()
     print(f"[tracker] Applied → job_id={job_id}  resume={resume_used}  follow_up={follow_up}")
@@ -313,7 +322,10 @@ def add_application(
 
 def update_notes(job_id: int, notes: str, db_path: Path = DB_PATH) -> None:
     conn = init_db(db_path)
-    conn.execute("UPDATE jobs SET notes = ? WHERE id = ?", (notes, job_id))
+    conn.execute(
+        "UPDATE jobs SET notes = ?, updated_at = ? WHERE id = ?",
+        (notes, datetime.now().isoformat(timespec="seconds"), job_id),
+    )
     conn.commit()
     conn.close()
 
@@ -333,6 +345,7 @@ def update_job(job_id: int, db_path: Path = DB_PATH, **fields) -> bool:
         return False
     if "status" in to_set and to_set["status"] not in VALID_STATUSES:
         raise ValueError(f"Invalid status '{to_set['status']}'. Choose from: {VALID_STATUSES}")
+    to_set["updated_at"] = datetime.now().isoformat(timespec="seconds")
     set_clause = ", ".join(f"{col} = ?" for col in to_set)
     values = list(to_set.values()) + [job_id]
     conn = init_db(db_path)

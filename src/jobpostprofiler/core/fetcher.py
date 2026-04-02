@@ -57,12 +57,24 @@ class FetchContentError(Exception):
         self.platform = platform
         self.signals = signals
         self.content_length = content_length
-        self.message = (
-            f"Could not extract job content from {url} ({platform or 'unknown platform'}). "
-            f"JS-rendering detected (signals: {', '.join(signals)}). "
-            f"Fetched content: {content_length} chars, no job headings found.\n"
-            f"Workaround: open the URL in your browser, copy the job posting text, and paste it directly."
-        )
+
+        # Pick the right explanation based on what actually went wrong
+        scrape_errors = [s for s in signals if s.startswith("scrape_error:")]
+        if scrape_errors:
+            # HTTP error or network failure — not a JS issue
+            error_detail = scrape_errors[0].split(":", 1)[1].strip()
+            self.message = (
+                f"Could not fetch job content from {url} ({platform or 'unknown platform'}). "
+                f"HTTP request failed: {error_detail}.\n"
+                f"Workaround: open the URL in your browser, copy the job posting text, and paste it directly."
+            )
+        else:
+            self.message = (
+                f"Could not extract job content from {url} ({platform or 'unknown platform'}). "
+                f"JS-rendering detected (signals: {', '.join(signals)}). "
+                f"Fetched content: {content_length} chars, no job headings found.\n"
+                f"Workaround: open the URL in your browser, copy the job posting text, and paste it directly."
+            )
         super().__init__(self.message)
 
 
@@ -192,12 +204,20 @@ def _prefer_selenium(scrape_len: int, selenium_len: int) -> bool:
     return selenium_len >= scrape_len * 3
 
 
+_SCRAPE_ERROR_PREFIX = "[scrape_error: "
+
+
 def _from_url(url: str) -> FetchResult:
     signals: list[str] = []
     warnings: list[str] = []
 
     # --- Attempt 1: plain HTTP scrape ---
     raw = _scrape(url)
+
+    # Detect HTTP / network errors before JS-shell heuristics
+    if raw.startswith(_SCRAPE_ERROR_PREFIX):
+        error_detail = raw[len(_SCRAPE_ERROR_PREFIX):].rstrip("]")
+        signals.append(f"scrape_error:{error_detail}")
 
     if _is_js_shell(raw, signals):
         # --- Attempt 2: Selenium fallback ---

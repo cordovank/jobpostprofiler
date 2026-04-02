@@ -205,6 +205,20 @@ def _prefer_selenium(scrape_len: int, selenium_len: int) -> bool:
 
 
 def _from_url(url: str) -> FetchResult:
+    platform = _infer_platform(url)
+
+    # --- Platform-specific strategies (tried first) ---
+    if platform == "workday":
+        wd_result = _scrape_workday(url)
+        if wd_result:
+            return FetchResult(
+                text=wd_result,
+                input_type="url",
+                method="workday_api",
+                url=url,
+                source_platform=platform,
+            )
+
     signals: list[str] = []
     warnings: list[str] = []
 
@@ -233,7 +247,7 @@ def _from_url(url: str) -> FetchResult:
         input_type="url",
         method=method,
         url=url,
-        source_platform=_infer_platform(url),
+        source_platform=platform,
         signals_triggered=signals,
         warnings=warnings,
     )
@@ -242,6 +256,66 @@ def _from_url(url: str) -> FetchResult:
 # ---------------------------------------------------------------------------
 # Scraping helpers
 # ---------------------------------------------------------------------------
+
+_WORKDAY_URL_RE = re.compile(
+    r"https?://(?P<host>(?P<company>[^.]+)\.wd\d+\.myworkdayjobs\.com)"
+    r"(?:/[a-zA-Z]{2}-[a-zA-Z]{2,3})?"          # optional locale e.g. /en-US
+    r"/(?P<site>[^/]+)"                           # career site name
+    r"/job/(?P<job_path>.+?)(?:\?.*)?$"           # job path (strip query params)
+)
+
+
+def _scrape_workday(url: str) -> str | None:
+    """Fetch job data via Workday's JSON API. Returns formatted text or None."""
+    m = _WORKDAY_URL_RE.match(url)
+    if not m:
+        return None
+    host, company = m.group("host"), m.group("company")
+    site, job_path = m.group("site"), m.group("job_path")
+    api_url = f"https://{host}/wday/cxs/{company}/{site}/job/{job_path}"
+    try:
+        resp = requests.get(api_url, headers={"Accept": "application/json"}, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return None
+
+    info = data.get("jobPostingInfo", {})
+    title = info.get("title", "")
+    location = info.get("location", "")
+    posted = info.get("postedOn", "")
+    desc_html = info.get("jobDescription", "")
+
+    # Extract additional fields from structured data
+    additional = data.get("jobPostingAdditionalData", {})
+    ext_fields = additional.get("externalField", [])
+
+    lines: list[str] = []
+    if title:
+        lines.append(f"Job Title: {title}")
+    if location:
+        lines.append(f"Location: {location}")
+    if posted:
+        lines.append(f"Posted: {posted}")
+
+    # Append any structured fields (e.g. Job Family, Time Type)
+    for field_entry in ext_fields:
+        label = field_entry.get("label", "")
+        values = field_entry.get("values", [])
+        if label and values:
+            lines.append(f"{label}: {', '.join(values)}")
+
+    if lines:
+        lines.append("")  # blank separator
+
+    # Convert HTML description to text
+    if desc_html:
+        soup = BeautifulSoup(desc_html, "html.parser")
+        lines.append(soup.get_text(separator="\n"))
+
+    text = "\n".join(lines).strip()
+    return text if len(text) > 100 else None
+
 
 def _scrape(url: str) -> tuple[str, str | None]:
     """Plain requests + BeautifulSoup text extraction.

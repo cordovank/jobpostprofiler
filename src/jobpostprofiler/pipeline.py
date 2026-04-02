@@ -12,7 +12,6 @@ Everything else is deterministic Python:
 
 from __future__ import annotations
 
-import os
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -29,6 +28,10 @@ from jobpostprofiler.models.job_models import PostingExtract, Source
 from jobpostprofiler.models.qa_models import QAReport
 
 
+class PipelineCancelled(Exception):
+    """Raised when the user cancels a running pipeline."""
+
+
 @dataclass
 class PipelineResult:
     extract: PostingExtract
@@ -42,6 +45,8 @@ class PipelineResult:
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+from typing import Callable
+
 def run_pipeline(
     *,
     url: str = "",
@@ -51,6 +56,7 @@ def run_pipeline(
     client=None,
     uid: str | None = None,
     force: bool = False,
+    cancel: Callable[[], bool] | None = None,
 ) -> PipelineResult:
     """
     Full pipeline: fetch → classify → extract → render → qa → write.
@@ -97,6 +103,8 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # Step 3: Extract structured fields — LLM call #1
     # ------------------------------------------------------------------
+    if cancel and cancel():
+        raise PipelineCancelled("Cancelled before extraction.")
     extracted_at = datetime.now().strftime("%d %b %Y").lstrip("0")
     source = Source(
         extracted_at=extracted_at,
@@ -131,6 +139,8 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # Step 5: QA audit — LLM call #2
     # ------------------------------------------------------------------
+    if cancel and cancel():
+        raise PipelineCancelled("Cancelled before QA audit.")
     qa_msg = QA_USER_TEMPLATE.format(
         text=fetch_result.text, 
         extract_json=extract.model_dump_json(indent=2)
@@ -183,7 +193,7 @@ def run_pipeline(
             qa_report=qa.model_dump(),
             run_id=run_id,
             normalized_text=fetch_result.text,
-            source_channel=os.getenv("SOURCE_CHANNEL", "other"),
+            source_channel=cfg.source_channel,
             match_score=match_result.overall_score if match_result else None,
             extract_json=extract.model_dump_json(indent=2),
             markdown_rendered=markdown,

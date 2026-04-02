@@ -4,6 +4,7 @@ UI COMPONENTS
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import escape as html_escape
 from typing import Optional, Dict, Any, Tuple
 import json
 from pathlib import Path
@@ -105,11 +106,11 @@ def render_outputs(
     comp     = role.get("compensation") or ""
 
     meta_parts = [p for p in [co_name, location, emp_type, comp] if p]
-    meta_str   = "  ·  ".join(meta_parts)
+    meta_str   = "  ·  ".join(html_escape(p) for p in meta_parts)
 
     # Job header
     st.html(f"""
-    <p class="job-header-title">{title}</p>
+    <p class="job-header-title">{html_escape(title)}</p>
     <p class="job-header-meta">{meta_str}</p>
     """)
 
@@ -118,7 +119,7 @@ def render_outputs(
     if req_skills:
         st.html('<p class="section-label">Required skills</p>')
         pills_html = "".join(
-            f'<span class="skill-pill">{s}</span>' for s in req_skills
+            f'<span class="skill-pill">{html_escape(s)}</span>' for s in req_skills
         )
         st.html(f'<div class="skill-pill-row">{pills_html}</div>')
 

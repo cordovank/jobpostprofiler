@@ -159,22 +159,3 @@ Original posting text:
 Extracted JSON:
 {extract_json}
 """
-
-
-# ---------------------------------------------------------------------------
-# Markdown writer prompt — optional third LLM call (or use renderer.py instead)
-# ---------------------------------------------------------------------------
-
-WRITER_SYSTEM = """
-You are a technical writer. You render job posting summaries from structured JSON using a provided template.
-Use ONLY the values in the JSON. Use "Not stated" for any null or missing values.
-Output markdown only. No commentary.
-"""
-
-WRITER_USER_TEMPLATE = """
-Extracted JSON:
-{extract_json}
-
-Template:
-{template}
-"""

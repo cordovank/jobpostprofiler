@@ -131,19 +131,22 @@ def cmd_show(args):
             user_profile = json.loads(skills_path.read_text(encoding="utf-8"))
             user_skills = user_profile.get("skills", [])
             if user_skills:
-                user_set = {s.lower().strip() for s in user_skills}
-                req_hit = [s for s in req if s.lower().strip() in user_set]
-                req_miss = [s for s in req if s.lower().strip() not in user_set]
-                pref_hit = [s for s in pref if s.lower().strip() in user_set]
-                pref_miss = [s for s in pref if s.lower().strip() not in user_set]
+                from jobpostprofiler.core.skill_match import compute_match
+                match_result = compute_match(
+                    user_skills=user_skills,
+                    required_skills=req,
+                    preferred_skills=pref,
+                )
                 if req:
-                    print(f"    Required:      {len(req_hit)}/{len(req)}  {', '.join(req_hit) or '—'}")
-                    if req_miss:
-                        print(f"    Missing:       {', '.join(req_miss)}")
+                    print(f"    Required:      {len(match_result.required_matched)}/{len(req)}  "
+                          f"{', '.join(match_result.required_matched) or '—'}")
+                    if match_result.required_missing:
+                        print(f"    Missing:       {', '.join(match_result.required_missing)}")
                 if pref:
-                    print(f"    Preferred:     {len(pref_hit)}/{len(pref)}  {', '.join(pref_hit) or '—'}")
-                    if pref_miss:
-                        print(f"    Missing:       {', '.join(pref_miss)}")
+                    print(f"    Preferred:     {len(match_result.preferred_matched)}/{len(pref)}  "
+                          f"{', '.join(match_result.preferred_matched) or '—'}")
+                    if match_result.preferred_missing:
+                        print(f"    Missing:       {', '.join(match_result.preferred_missing)}")
 
     if job.get("url"):
         print(f"  URL:             {job['url']}")

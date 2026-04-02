@@ -2,11 +2,13 @@
 JOB POST PROFILER — Streamlit UI
 Run: streamlit run src/jobpostprofiler/ui/app.py
 """
+import threading
+import time
 import streamlit as st
 from uuid import uuid4
 from jobpostprofiler.config import AppConfig, validate_config
 from jobpostprofiler.core.fetcher import FetchContentError
-from jobpostprofiler.pipeline import run_pipeline, PipelineResult
+from jobpostprofiler.pipeline import run_pipeline, PipelineCancelled, PipelineResult
 from jobpostprofiler.ui.ui_components import (
     render_header,
     render_input_panel,
@@ -432,22 +434,56 @@ with tab_extract:
         st.caption(err)
 
     if analyze_btn and ok:
-        with st.spinner("Fetching and extracting…"):
-            run_id = str(uuid4())
+        cancel_event = threading.Event()
+        container = {"result": None, "error": None}
+
+        def _run():
             try:
-                result: PipelineResult = run_pipeline(
+                container["result"] = run_pipeline(
                     url=ui.url if ui.mode == "url" else "",
                     text=ui.text if ui.mode == "text" else "",
                     cfg=cfg,
-                    uid=run_id,
+                    uid=str(uuid4()),
                     force=force,
+                    cancel=cancel_event.is_set,
                 )
-                st.session_state["result"] = result
-            except FetchContentError as e:
-                st.error(e.message)
+            except Exception as exc:
+                container["error"] = exc
+
+        worker = threading.Thread(target=_run, daemon=True)
+        worker.start()
+
+        status = st.empty()
+        stop_col, _ = st.columns([1, 3])
+        stop_holder = stop_col.empty()
+        tick = 0
+
+        while worker.is_alive():
+            stop_holder.empty()
+            if stop_holder.button("Stop analysis", key=f"stop_btn_{tick}"):
+                cancel_event.set()
+                status.info("Cancelling…")
+            else:
+                status.info("Fetching and extracting…")
+            tick += 1
+            time.sleep(0.3)
+
+        status.empty()
+        stop_holder.empty()
+
+        if cancel_event.is_set():
+            st.warning("Analysis stopped.")
+        elif container["error"] is not None:
+            exc = container["error"]
+            if isinstance(exc, FetchContentError):
+                st.error(exc.message)
                 st.info("Tip: switch to the **Text** tab and paste the job posting content directly.")
-            except Exception as e:
-                st.error(f"Pipeline failed: {e}")
+            elif isinstance(exc, PipelineCancelled):
+                st.warning("Analysis stopped.")
+            else:
+                st.error(f"Pipeline failed: {exc}")
+        else:
+            st.session_state["result"] = container["result"]
 
     result: PipelineResult | None = st.session_state.get("result")
 

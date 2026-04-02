@@ -204,20 +204,14 @@ def _prefer_selenium(scrape_len: int, selenium_len: int) -> bool:
     return selenium_len >= scrape_len * 3
 
 
-_SCRAPE_ERROR_PREFIX = "[scrape_error: "
-
-
 def _from_url(url: str) -> FetchResult:
     signals: list[str] = []
     warnings: list[str] = []
 
     # --- Attempt 1: plain HTTP scrape ---
-    raw = _scrape(url)
-
-    # Detect HTTP / network errors before JS-shell heuristics
-    if raw.startswith(_SCRAPE_ERROR_PREFIX):
-        error_detail = raw[len(_SCRAPE_ERROR_PREFIX):].rstrip("]")
-        signals.append(f"scrape_error:{error_detail}")
+    raw, scrape_err = _scrape(url)
+    if scrape_err:
+        signals.append(f"scrape_error:{scrape_err}")
 
     if _is_js_shell(raw, signals):
         # --- Attempt 2: Selenium fallback ---
@@ -249,8 +243,11 @@ def _from_url(url: str) -> FetchResult:
 # Scraping helpers
 # ---------------------------------------------------------------------------
 
-def _scrape(url: str) -> str:
-    """Plain requests + BeautifulSoup text extraction."""
+def _scrape(url: str) -> tuple[str, str | None]:
+    """Plain requests + BeautifulSoup text extraction.
+
+    Returns (content, None) on success, ("", error_reason) on failure.
+    """
     try:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; JobPostProfiler/1.0)"}
         resp = requests.get(url, headers=headers, timeout=15)
@@ -258,9 +255,9 @@ def _scrape(url: str) -> str:
         soup = BeautifulSoup(resp.text, "html.parser")
         for tag in soup(["script", "style", "noscript", "header", "footer", "nav"]):
             tag.decompose()
-        return soup.get_text(separator="\n")
+        return soup.get_text(separator="\n"), None
     except Exception as exc:
-        return f"[scrape_error: {exc}]"
+        return "", str(exc)
 
 
 def _scrape_selenium(url: str) -> str:

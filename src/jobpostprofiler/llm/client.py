@@ -65,7 +65,7 @@ def structured_call(
             {"role": "system", "content": full_system},
             {"role": "user", "content": user_message},
         ],
-        # temperature=temperature,
+        temperature=temperature,
     )
 
     raw = (resp.choices[0].message.content or "").strip()
@@ -139,6 +139,6 @@ def plain_call(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
-        # temperature=temperature,
+        temperature=temperature,
     )
     return (resp.choices[0].message.content or "").strip()

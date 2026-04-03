@@ -455,6 +455,7 @@ def render_tracker_tab() -> None:
             new_remote  = st.text_input("Remote policy", value=job.get("remote_policy") or "")
             new_emp     = st.text_input("Employment type", value=job.get("employment_type") or "")
 
+        new_url   = st.text_input("URL", value=job.get("url") or "")
         new_notes = st.text_area("Notes", value=job.get("notes") or "", height=80)
 
         saved = st.form_submit_button("Save changes")
@@ -471,6 +472,7 @@ def render_tracker_tab() -> None:
             ("remote_policy",   new_remote,  job.get("remote_policy") or ""),
             ("employment_type", new_emp,     job.get("employment_type") or ""),
             ("notes",           new_notes,   job.get("notes") or ""),
+            ("url",             new_url,     job.get("url") or ""),
         ]
         for key, new_val, old_val in mapping:
             if new_val != old_val:

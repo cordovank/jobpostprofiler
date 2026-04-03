@@ -348,7 +348,7 @@ def update_notes(job_id: int, notes: str, db_path: Path = DB_PATH) -> None:
 EDITABLE_FIELDS = {
     "title", "company", "location", "remote_policy",
     "employment_type", "salary_range", "status", "notes",
-    "source_channel",
+    "source_channel", "url",
 }
 
 

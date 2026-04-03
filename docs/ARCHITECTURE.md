@@ -1,4 +1,4 @@
-# JobPostProfiler — Architecture & Technical Reference
+# HireSignal — Architecture & Technical Reference
 
 > Extended documentation for contributors and technical evaluation. For setup and usage, see [README.md](README.md).
 
@@ -33,7 +33,7 @@
 
 Job postings are scattered across platforms, formatted inconsistently, and hidden behind JavaScript walls. Extracting, comparing, and tracking them at scale requires more than copy-paste — it requires normalized, queryable, auditable data.
 
-JobPostProfiler turns any job posting into a validated, schema-governed JSON document with a human-readable summary. The LLM is used precisely where it adds value (structured extraction and quality auditing). Every other step — fetching, normalizing, classifying, rendering, scoring — is pure Python with deterministic, testable behavior.
+**HireSignal** turns any job posting into a validated, schema-governed JSON document with a human-readable summary. The LLM is used precisely where it adds value (structured extraction and quality auditing). Every other step — fetching, normalizing, classifying, rendering, scoring — is pure Python with deterministic, testable behavior.
 
 The project demonstrates **responsible agentic system design**: the LLM budget is capped at exactly two calls per posting, every LLM output is schema-validated before use, and a dedicated QA pass audits the extraction against the original text.
 
@@ -388,9 +388,23 @@ Indexes on `status`, `company`, and `date_found`.
 
 ## Tracker CLI
 
-`tracker_cli.py` provides a full command-line interface for managing the job search pipeline.
+`tracker_cli.py` provides a full command-line interface for managing the job search pipeline. A `Makefile` wraps common commands for convenience.
 
-### Commands
+### Make Shortcuts
+
+```bash
+make status                     # view tracker board
+make search q="ML engineer"     # search by keyword
+make show id=3                  # job details
+make show-full id=3             # job details + full JD text
+make apply id=3 resume=ML       # log application (ML, SWE, or custom)
+make followup                   # due follow-ups
+make export                     # markdown report
+make export-job id=3            # export job artifacts to files
+make rescore                    # recompute all match scores
+```
+
+### Full Command Reference
 
 | Command | Description |
 |---|---|
@@ -504,7 +518,7 @@ Add a new branch in `AppConfig.__post_init__()` that sets `URL`, `API_KEY`, and 
 ## Project Layout
 
 ```
-JobPostProfiler/
+HireSignal/
 │
 ├── src/
 │   └── jobpostprofiler/
@@ -539,6 +553,7 @@ JobPostProfiler/
 │   └── conftest.py
 │
 ├── tracker_cli.py
+├── Makefile
 ├── docs/
 │   └── cli.md
 ├── my_skills.example.json

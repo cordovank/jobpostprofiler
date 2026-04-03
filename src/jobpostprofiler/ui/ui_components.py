@@ -19,7 +19,7 @@ class UIInput:
 
 
 def render_header():
-    st.title("Profiler")
+    st.title("HireSignal")
     st.html('<p class="profiler-subtitle">Extract · Evaluate · Track</p>')
 
 

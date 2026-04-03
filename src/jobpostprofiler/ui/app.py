@@ -28,7 +28,7 @@ _base_cfg = AppConfig()
 # ---------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="Profiler",
+    page_title="HireSignal",
     page_icon=None,
     layout="centered",
 )

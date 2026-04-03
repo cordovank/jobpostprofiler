@@ -1,4 +1,4 @@
-# JobPostProfiler
+# HireSignal
 
 > Extract · Evaluate · Track
 
@@ -17,8 +17,8 @@ Give it a job posting URL, paste raw text, or point it at a file — get back st
 ### Install
 
 ```bash
-git clone https://github.com/cordovank/JobPostProfiler.git
-cd JobPostProfiler
+git clone https://github.com/cordovank/HireSignal.git
+cd HireSignal
 
 cp .env.example .env
 # Edit .env — set SELECTED_PROVIDER and the corresponding model/key vars
@@ -26,27 +26,15 @@ cp .env.example .env
 uv sync
 ```
 
-### Run — Streamlit UI
+### Run
 
 ```bash
-uv run streamlit run src/jobpostprofiler/ui/app.py
+make run          # launch Streamlit UI
+make cli          # run pipeline on built-in example posting
+make test         # run test suite
 ```
 
-Paste a URL or full posting text, click **Analyze**, and view the extraction summary, structured JSON, QA report, and skill match score.
-
-### Run — CLI
-
-```bash
-uv run -m jobpostprofiler.main
-```
-
-Runs the pipeline against the built-in example posting. Useful for verifying model output.
-
-### Run — Tests
-
-```bash
-uv run python -m pytest -v 2>&1
-```
+Paste a URL or full posting text in the UI, click **Analyze**, and view the extraction summary, structured JSON, QA report, and skill match score.
 
 Unit tests cover all `core/` modules (no LLM required). Integration tests use a mock client.
 
@@ -87,23 +75,15 @@ Every extraction auto-saves to `jobs.db`. Manage your pipeline via CLI or the St
 ### CLI Quick Reference
 
 ```bash
-# View pipeline
-python tracker_cli.py status
-
-# Search jobs
-python tracker_cli.py search "ML engineer"
-
-# Log an application
-python tracker_cli.py apply 3 --resume ML
-
-# Check follow-ups due today
-python tracker_cli.py followup
-
-# Export job artifacts to files
-python tracker_cli.py export-job 3
-
-# Rescore all jobs with updated my_skills.json
-python tracker_cli.py rescore
+make status                     # view tracker board
+make search q="ML engineer"     # search by keyword
+make show id=3                  # job details
+make show-full id=3             # job details + full JD text
+make apply id=3 resume=ML       # log application (ML, SWE, or custom)
+make followup                   # due follow-ups
+make export                     # markdown report
+make export-job id=3            # export job artifacts to files
+make rescore                    # recompute all match scores
 ```
 
 See [docs/cli.md](docs/cli.md) for the full reference.

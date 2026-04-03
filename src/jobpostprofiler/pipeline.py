@@ -16,6 +16,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from jobpostprofiler.config import AppConfig, load_user_profile
 from jobpostprofiler.core.fetcher import fetch_and_normalize, FetchResult, check_content_quality, FetchContentError
@@ -45,7 +46,6 @@ class PipelineResult:
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
-from typing import Callable
 
 def run_pipeline(
     *,

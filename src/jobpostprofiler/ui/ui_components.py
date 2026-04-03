@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from html import escape as html_escape
 from typing import Optional, Dict, Any, Tuple
 import json
-from pathlib import Path
 import streamlit as st
 from jobpostprofiler.config import load_user_profile
 
@@ -67,23 +66,6 @@ def validate_inputs(ui: UIInput) -> Tuple[bool, Optional[str]]:
             return False, "That text looks too short to be a full job posting. Paste more content."
     return True, None
 
-
-def read_text_file(path: Path) -> Optional[str]:
-    try:
-        if path.exists():
-            return path.read_text(encoding="utf-8")
-    except Exception:
-        return None
-    return None
-
-
-def read_json_file(path: Path) -> Optional[Dict[str, Any]]:
-    try:
-        if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return None
 
 
 def render_outputs(

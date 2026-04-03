@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from jobpostprofiler.config import AppConfig, SKILLS_PATH
+from jobpostprofiler.config import AppConfig, load_user_profile
 from jobpostprofiler.core.fetcher import fetch_and_normalize, FetchResult, check_content_quality, FetchContentError
 from jobpostprofiler.core.classifier import classify_kind
 from jobpostprofiler.core.renderer import render_markdown
@@ -170,9 +170,8 @@ def run_pipeline(
     # ------------------------------------------------------------------
     _status("Computing skill match\u2026")
     match_result: MatchResult | None = None
-    skills_path = SKILLS_PATH
-    if skills_path.exists():
-        user_profile = json.loads(skills_path.read_text(encoding="utf-8"))
+    user_profile = load_user_profile()
+    if user_profile:
         user_skills  = user_profile.get("skills", [])
         bridgeable   = {s.lower().strip() for s in user_profile.get("bridgeable", [])}
         if user_skills:

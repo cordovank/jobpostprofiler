@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any, Tuple
 import json
 from pathlib import Path
 import streamlit as st
-from jobpostprofiler.config import SKILLS_PATH
+from jobpostprofiler.config import load_user_profile
 
 
 @dataclass
@@ -262,11 +262,10 @@ def _render_job_detail(job: Dict[str, Any]) -> None:
         pref_skills = skills.get("preferred", []) if isinstance(skills, dict) else []
 
         # Reconstruct a MatchResult from stored data for render_match_score
-        user_skills_path = SKILLS_PATH
-        if user_skills_path.exists():
+        user_profile = load_user_profile()
+        if user_profile:
             try:
                 from jobpostprofiler.core.skill_match import compute_match
-                user_profile = json.loads(user_skills_path.read_text(encoding="utf-8"))
                 user_skills = user_profile.get("skills", [])
                 bridgeable = {s.lower().strip() for s in user_profile.get("bridgeable", [])}
                 if user_skills:
@@ -370,7 +369,7 @@ def render_tracker_tab() -> None:
             ),
         },
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
     )
 
     # ── Row selector ──────────────────────────────────────────────────────

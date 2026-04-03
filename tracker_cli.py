@@ -29,7 +29,7 @@ from pathlib import Path
 # Allow running from repo root without install
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from jobpostprofiler.config import SKILLS_PATH
+from jobpostprofiler.config import load_user_profile
 from jobpostprofiler.db.store import (
     DB_PATH,
     EDITABLE_FIELDS,
@@ -127,9 +127,8 @@ def cmd_show(args):
     if job.get("match_score") is not None:
         print(f"\n  Skill Match:     {job['match_score']:.0%}")
         # Show breakdown if my_skills.json is available
-        skills_path = SKILLS_PATH
-        if skills_path.exists():
-            user_profile = json.loads(skills_path.read_text(encoding="utf-8"))
+        user_profile = load_user_profile()
+        if user_profile:
             user_skills = user_profile.get("skills", [])
             if user_skills:
                 from jobpostprofiler.core.skill_match import compute_match
@@ -348,15 +347,13 @@ def cmd_rescore(args):
     Only updates the match_score column — no other fields are touched.
     """
     import json
-    from pathlib import Path
     from jobpostprofiler.core.skill_match import compute_match
 
-    skills_path = SKILLS_PATH
-    if not skills_path.exists():
+    user_profile = load_user_profile()
+    if not user_profile:
         print("  my_skills.json not found. Nothing to do.")
         return
 
-    user_profile = json.loads(skills_path.read_text(encoding="utf-8"))
     user_skills  = user_profile.get("skills", [])
     if not user_skills:
         print("  No skills found in my_skills.json. Nothing to do.")

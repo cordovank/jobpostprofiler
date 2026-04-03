@@ -1,278 +1,23 @@
 # JobPostProfiler
 
-> **Job posting extraction pipeline.** Give it a URL, paste text, or point it at a file — get back structured JSON, a clean Markdown summary, and a QA audit. Two LLM calls. Everything else is deterministic Python.
+> Extract · Evaluate · Track
+
+Give it a job posting URL, paste raw text, or point it at a file — get back structured JSON, a Markdown summary, a QA audit report, and a skill match score. Two LLM calls. Everything else is deterministic Python.
 
 ---
 
-## Why This Exists
-
-Sourcing and tracking job postings is manual, inconsistent work. Every platform formats postings differently — some as structured HTML, others as flat text, others behind JavaScript walls. Extracting and comparing postings at scale requires more than copy-paste: you need normalized data you can query, filter, and audit.
-
-**JobPostProfiler** solves this by turning any job posting into a validated, schema-governed JSON document with a human-readable Markdown summary — automatically, with transparent quality checks.
-
-The project is also a demonstration of **responsible agentic system design**: the LLM is used precisely where it adds value (structured field extraction and quality auditing), while every other step — fetching, normalizing, classifying, rendering — is pure Python with deterministic, testable behavior.
-
----
-
-## What It Does (End-to-End)
-
-```
-Input (URL / pasted text / file)
-       │
-       ▼
-[1] Fetch + Normalize          ← pure Python (requests, BeautifulSoup, Selenium fallback)
-       │
-       ▼
-[2] Classify Posting Kind      ← pure Python heuristic (employment vs. freelance)
-       │
-       ▼
-[3] Extract Structured Fields  ← LLM call #1 → validated PostingExtract (Pydantic)
-       │
-       ▼
-[4] Render Markdown Summary    ← pure Python (Jinja2 templates, no LLM)
-       │
-       ▼
-[5] QA Audit                   ← LLM call #2 → QAReport (Pydantic)
-       │
-       ▼
-Output: normalized_job_post.txt, posting_kind.json,
-        job_extract.json, job_summary.md, quality_report.json
-```
-
-Each step has a single, clearly bounded responsibility. The LLM sees clean, normalized input. The LLM produces schema-validated output. All rendering and classification are done by Python — not prompted out of a model.
-
----
-
-## Architecture
-
-### Design Principles
-
-**Separation of concerns — LLM touches only what Python can't.**
-Fetching, deduplication, JS-shell detection, posting classification, and Markdown rendering are all Python. The LLM handles the two tasks that genuinely require language understanding: field extraction from unstructured text, and quality auditing of its own output.
-
-**Schema-first extraction.**
-`PostingExtract` is a Pydantic model with `extra="forbid"`. The LLM is given the schema and instructed to produce only schema-valid JSON. The extractor rejects and retries on parse failures, not silently accepts malformed output.
-
-**Evidence-gated extraction — no guessing.**
-Prompts are written to require explicit textual evidence for every field. Missing data becomes `null` plus a warning, not an inference. A posting with all-null company fields and no warnings is flagged as an automatic extraction failure.
-
-**Deterministic rendering.**
-Markdown output is rendered by Jinja2 from the validated `PostingExtract`. There is no LLM call in the rendering step. The templates are versioned and testable.
-
-**QA as a first-class gate, not an afterthought.**
-A second LLM call audits the extraction against the original text, checking for hallucinated fields, missing sections without warnings, and schema violations.
-
----
-
-### Module Map
-
-```
-src/jobpostprofiler/
-│
-├── core/                  # Pure Python — no LLM, fully testable
-│   ├── fetcher.py         # fetch_and_normalize(): HTTP scrape, Selenium fallback, normalization
-│   ├── classifier.py      # classify_kind(): signal-based heuristic → "employment" | "freelance"
-│   ├── renderer.py        # render_markdown(): Jinja2 templates from PostingExtract
-│   └── skill_match.py     # compute_match(): skill scoring (pure Python, no I/O)
-│
-├── llm/                   # All LLM-touching code, isolated here
-│   ├── client.py          # get_client(), structured_call(), plain_call()
-│   └── prompts.py         # EXTRACTOR_SYSTEM, QA_SYSTEM, user message templates
-│
-├── models/                # Pydantic schemas — source of truth for data contracts
-│   ├── job_models.py      # PostingExtract, EmploymentDetails, FreelanceDetails, Source, Skills
-│   └── qa_models.py       # QAReport
-│
-├── db/
-│   ├── __init__.py
-│   └── store.py           # SQLite persistence layer (job tracker)
-│
-├── ui/
-│   ├── app.py             # Streamlit entry point (Extractor + Tracker tabs)
-│   └── ui_components.py   # render_header(), render_input_panel(), render_outputs(), render_tracker_tab()
-│
-├── pipeline.py            # run_pipeline() — orchestrates all steps
-├── config.py              # AppConfig: provider selection, env vars, validation
-└── main.py                # CLI entry point for local testing
-```
-
-**Key design invariant:** `core/` has zero LLM dependencies. `llm/` has zero business logic. `models/` has zero I/O. These boundaries are enforced by import structure and testable in isolation.
-
----
-
-### Data Models
-
-**PostingExtract** (top-level envelope)
-```
-PostingExtract
-├── source: Source                   # extraction metadata (url, timestamp, input_type)
-├── details: EmploymentDetails       # discriminated union on details.kind
-│       OR  FreelanceDetails
-├── responsibilities: List[str]
-├── requirements: List[str]
-├── preferred_qualifications: List[str]
-├── benefits: List[str]
-├── skills: Skills                   # required: List[str], preferred: List[str]
-└── warnings: List[str]              # extraction warnings — single source of truth
-```
-
-`details.kind` is the discriminator. It is set from the classifier output and the LLM is forbidden to override it. Warnings are **only** in the top-level `warnings` list — the model validator auto-promotes any warnings accidentally placed inside `details`.
-
-**QAReport**
-```
-QAReport
-├── passed: bool
-├── issues: List[str]
-└── missing_fields: List[str]
-```
-
----
-
-### Fetch + Normalize
-
-`fetcher.py` implements a deterministic routing strategy:
-
-1. Pasted text → use directly
-2. Local file → `FileReadTool` / `Path.read_text`
-3. URL →
-   a. Plain HTTP scrape (requests + BeautifulSoup)
-   b. JS-shell detection: content too short (<1500 chars), `__next`, `id="root"`, `id="app"`, or JavaScript-required message
-   c. If JS signals fire → Selenium headless fallback; prefer Selenium output only if longer AND contains job-like headings (Responsibilities, Qualifications, etc.)
-
-Normalization (always applied after fetch):
-- Strip boilerplate (cookie banners, nav menus, privacy policy, copyright footers)
-- Deduplicate repeated lines (case-insensitive)
-- Collapse multiple blank lines
-- Preserve headings and bullet structure
-- No summarization — content is cleaned, not compressed
-
----
-
-### Classifier
-
-`classifier.py` is a pure signal-counting heuristic. It scans normalized text for freelance signals (Upwork, Fiverr, fixed-price, proposals, payment verified, etc.) and employment signals (salary, benefits, apply now, department, ATS platform names, etc.). Employment is the default when signals are ambiguous.
-
-No LLM. No model calls. Fully testable with example strings.
-
----
-
-### LLM Client
-
-`client.py` provides two call types:
-
-- `structured_call()` — sends schema as reference, requests JSON-only response, validates with Pydantic, strips markdown fences, extracts the last JSON object if the model prepends schema echo. Raises `ValueError` with raw output on validation failure.
-- `plain_call()` — raw string output, used for QA and optional markdown writing.
-
-The client is injectable for testing — `run_pipeline()` accepts a `client` argument, making it straightforward to mock LLM calls in integration tests.
-
----
-
-### Provider Configuration
-
-Three providers supported via `.env`:
-
-| Provider | `SELECTED_PROVIDER` | Required vars |
-|---|---|---|
-| Ollama (local) | `OLLAMA` | `OLLAMA_MODEL` |
-| OpenRouter | `OPENROUTER` | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` |
-| OpenAI | `OPENAI` | `OPENAI_API_KEY`, `OPENAI_MODEL` |
-
-All providers use the OpenAI-compatible chat completions interface. Switching providers requires only `.env` changes.
-
----
-
-## Project Layout
-
-```
-JobPostProfiler/
-│
-├── src/
-│   └── jobpostprofiler/
-│       │
-│       ├── core/
-│       │   ├── __init__.py
-│       │   ├── fetcher.py
-│       │   ├── classifier.py
-│       │   └── renderer.py
-│       │
-│       ├── llm/
-│       │   ├── __init__.py
-│       │   ├── client.py
-│       │   └── prompts.py
-│       │
-│       ├── models/
-│       │   ├── __init__.py
-│       │   ├── job_models.py
-│       │   └── qa_models.py
-│       │
-│       ├── ui/
-│       │   ├── __init__.py
-│       │   ├── app.py
-│       │   └── ui_components.py
-│       │
-│       ├── pipeline.py
-│       ├── config.py
-│       └── main.py
-│
-├── tests/
-│   ├── unit/
-│   │   ├── test_fetcher.py          # normalize logic, JS-shell detection, boilerplate stripping
-│   │   ├── test_classifier.py       # signal scoring, edge cases
-│   │   └── test_renderer.py         # template output correctness, null handling
-│   ├── integration/
-│   │   ├── test_pipeline.py         # full run with mock LLM client
-│   │   └── fixtures/
-│   │       ├── sample_employment.txt
-│   │       └── sample_freelance.txt
-│   └── conftest.py
-│
-├── output/                          # gitignored — runtime artifacts per run
-│   └── {run_id}/
-│       ├── normalized_job_post.txt
-│       ├── posting_kind.json
-│       ├── job_extract.json
-│       ├── job_summary.md
-│       └── quality_report.json
-│
-├── tracker_cli.py                   # Job tracker CLI
-├── docs/
-│   └── cli.md                       # Detailed CLI reference
-├── my_skills.example.json           # Template for skill match profile
-├── .env                             # gitignored
-├── .env.example
-├── pyproject.toml
-├── uv.lock
-└── README.md
-```
-
----
-
-## Outputs
-
-Each run writes to `output/{run_id}/`:
-
-| File | Description |
-|---|---|
-| `normalized_job_post.txt` | Cleaned, deduplicated posting text |
-| `posting_kind.json` | `{"kind": "employment" \| "freelance", "warnings": []}` |
-| `job_extract.json` | Full `PostingExtract` as JSON |
-| `job_summary.md` | Human-readable Markdown summary |
-| `quality_report.json` | `QAReport`: pass/fail, issues, missing fields |
-
----
-
-## Quickstart
+## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
 - [uv](https://github.com/astral-sh/uv)
-- A running LLM (Ollama locally, or API key for OpenRouter/OpenAI)
+- An LLM provider: Ollama (local), OpenRouter, or OpenAI
 
-### Setup
+### Install
 
 ```bash
-git clone <repo>
+git clone https://github.com/cordovank/JobPostProfiler.git
 cd JobPostProfiler
 
 cp .env.example .env
@@ -281,71 +26,93 @@ cp .env.example .env
 uv sync
 ```
 
-### Option A — Streamlit UI
+### Run — Streamlit UI
 
 ```bash
 uv run streamlit run src/jobpostprofiler/ui/app.py
 ```
 
-Paste a job URL or the full posting text, click **Run extraction**, and view:
-- Rendered Markdown summary
-- Full structured JSON (`job_extract.json`)
-- QA report (`quality_report.json`)
+Paste a URL or full posting text, click **Analyze**, and view the extraction summary, structured JSON, QA report, and skill match score.
 
-### Option B — CLI
+### Run — CLI
 
 ```bash
 uv run -m jobpostprofiler.main
 ```
 
-Uses the example posting in `main.py`. Useful for quick local testing and verifying model output.
+Runs the pipeline against the built-in example posting. Useful for verifying model output.
 
-### Tests
-
-Run full test suite:
+### Run — Tests
 
 ```bash
 uv run python -m pytest -v 2>&1
 ```
 
-Unit tests cover `core/` (no LLM required). Integration tests use a mock client and fixture postings.
+Unit tests cover all `core/` modules (no LLM required). Integration tests use a mock client.
+
+---
+
+## What It Produces
+
+Each extraction generates:
+
+| Artifact | Description |
+|---|---|
+| Structured JSON | `PostingExtract` — validated Pydantic model with role, company, skills, requirements, benefits |
+| Markdown summary | Human-readable rendering via Jinja2 templates (no LLM) |
+| QA report | Pass/fail audit: hallucination check, missing field detection, qualifier violations |
+| Skill match score | Weighted coverage against your `my_skills.json` profile (no LLM) |
+
+All artifacts are automatically saved to a local SQLite tracker (`jobs.db`).
+
+---
+
+## Skill Match Scoring
+
+```bash
+cp my_skills.example.json my_skills.json
+# Edit with your skills, soft skills, and bridgeable skills
+```
+
+The pipeline scores every extraction against your profile using alias-aware set intersection — zero LLM calls. Scores appear in the Streamlit Tracker tab and CLI output. Weights: 65% required, 25% preferred, 10% soft skills.
 
 ---
 
 ## Job Tracker
 
-The pipeline automatically saves every extraction to a local SQLite database (`jobs.db` at repo root). A companion CLI lets you manage your job search pipeline from the terminal. Duplicate URLs are detected automatically — the pipeline skips LLM calls if a posting has already been processed.
+Every extraction auto-saves to `jobs.db`. Manage your pipeline via CLI or the Streamlit Tracker tab.
 
 **Status flow:** `found → applied → phone_screen → technical → offer | rejected | ghosted`
 
-### CLI Commands
-
-| Command | Description |
-|---|---|
-| `status [--status <value>]` | View job pipeline with summary counts |
-| `show <id> [--full]` | Full detail view for a single job |
-| `search <query>` | Search by title, company, skills, or notes |
-| `apply <id> --resume ML\|SWE\|custom` | Log an application and set follow-up |
-| `update <id> --status <value>` | Move a job forward in the pipeline |
-| `notes <id> "text"` | Save notes on a job |
-| `followup` | Show applications due for follow-up |
-| `export [--out file.md]` | Markdown report for Claude Project |
-| `save <dir> [--channel <value>]` | Load a previous pipeline run into DB |
-
-### Skill Match Scoring
-
-Copy `my_skills.example.json` to `my_skills.json` and list your skills. The pipeline will score every extraction against your profile — no extra LLM calls, pure set intersection. Scores appear in `status`, `show`, and the Streamlit Tracker tab.
+### CLI Quick Reference
 
 ```bash
-cp my_skills.example.json my_skills.json
-# Edit my_skills.json with your skills
+# View pipeline
+python tracker_cli.py status
+
+# Search jobs
+python tracker_cli.py search "ML engineer"
+
+# Log an application
+python tracker_cli.py apply 3 --resume ML
+
+# Check follow-ups due today
+python tracker_cli.py followup
+
+# Export job artifacts to files
+python tracker_cli.py export-job 3
+
+# Rescore all jobs with updated my_skills.json
+python tracker_cli.py rescore
 ```
 
-`jobs.db` and `my_skills.json` are gitignored and local-only. See [docs/cli.md](docs/cli.md) for detailed usage with examples.
+See [docs/cli.md](docs/cli.md) for the full reference.
 
 ---
 
-## Environment Variables
+## Provider Configuration
+
+All providers use the OpenAI-compatible chat completions interface. Switching requires only `.env` changes.
 
 ```env
 # Provider selection: OLLAMA | OPENROUTER | OPENAI
@@ -361,57 +128,62 @@ OPENROUTER_MODEL=mistralai/mistral-7b-instruct
 # OpenAI
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
-
-# Output directory (default: output/)
-OUTPUT_DIR=output
 ```
 
 ---
 
-## Engineering Notes
+## Three Posting Types
 
-### What uses the LLM (and why)
+The pipeline handles employment, freelance, and internship postings with dedicated Pydantic models, classifier signals, and Jinja2 templates for each. Posting kind is determined by a deterministic heuristic before the LLM sees the text.
 
-| Step | LLM? | Reason |
-|---|---|---|
-| Fetch + normalize | No | Deterministic text cleanup |
-| JS-shell detection | No | Signal pattern matching |
-| Classify kind | No | Signal counting heuristic |
-| Extract fields | **Yes** | Unstructured → structured; requires language understanding |
-| Render markdown | No | Jinja2 from validated JSON |
-| QA audit | **Yes** | Requires reading comprehension to detect hallucination |
+---
 
-### Failure handling
+## Architecture at a Glance
 
-- **Pydantic `extra="forbid"`** rejects any LLM output with undeclared keys. The extractor logs the raw output and raises on failure.
-- **`model_validator(mode="before")`** in `PostingExtract` auto-repairs common LLM output mistakes (null lists coerced to `[]`, warnings leaked into `details` auto-promoted to top-level).
-- **`_extract_last_json_object()`** handles models that echo the schema before the extraction JSON.
-- **JS-shell fallback** in `fetcher.py` handles JavaScript-rendered pages without requiring the caller to know about rendering strategies.
-- **QA auto-fail conditions** catch the most common extraction failure: all-null `company` or `role` fields with no corresponding warnings — which indicates the model didn't read the file, not that the data was missing.
+```
+Input (URL / text / file)
+       │
+       ▼
+[1] Fetch + Normalize          ← Python (requests, BS4, Selenium fallback, Workday API)
+       │
+       ▼
+[2] Classify Posting Kind      ← Python heuristic (signal counting)
+       │
+       ▼
+[3] Extract Structured Fields  ← LLM call #1 → PostingExtract (Pydantic, extra="forbid")
+       │
+       ▼
+[4] Render Markdown            ← Python (Jinja2 templates)
+       │
+       ▼
+[5] QA Audit                   ← LLM call #2 → QAReport (Pydantic)
+       │
+       ▼
+[6] Skill Match                ← Python (alias-aware set intersection)
+       │
+       ▼
+[7] Save to Tracker            ← SQLite (jobs.db)
+```
 
-### Testability
+For the full technical deep-dive, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-- `core/` modules have no LLM dependencies and are unit-testable with plain strings.
-- `run_pipeline()` accepts an injectable `client` argument for full integration testing without real LLM calls.
-- `PostingExtract.model_validate()` can be called directly in tests to verify schema compliance of any JSON fixture.
+---
 
-### Extending the pipeline
+## Tech Stack
 
-Three posting kinds are supported: `employment`, `freelance`, and `internship`. To add another:
-1. Add a new details model in `job_models.py`
-2. Update the `PostingDetails` union and discriminator
-3. Add signals to `classifier.py`
-4. Add a Jinja2 template in `renderer.py`
-5. Update extraction prompts if needed
-
-To swap the LLM:
-- Change `.env` only. No code changes required for supported providers.
+Python · Pydantic · OpenAI-compatible API · Streamlit · Jinja2 · SQLite · BeautifulSoup · Selenium (optional) · uv
 
 ---
 
 ## Known Limitations
 
-- **JavaScript-heavy pages** may still fail if Selenium is not available or the page requires authentication.
-- **Classifier accuracy** degrades on ambiguous postings (e.g., a contract role on a traditional job board). The LLM extraction step is unaffected since kind is passed explicitly.
-- **LLM output quality** varies by model. Smaller models may hallucinate fields or miss structured extraction. The QA step catches these but does not auto-correct them.
-- **Rate limits and costs** apply to hosted providers. The pipeline makes exactly 2 LLM calls per run regardless of input length.
+- JavaScript-heavy pages may fail if Selenium is unavailable or the page requires authentication. Workaround: paste the text directly.
+- LLM output quality varies by model — smaller models may hallucinate fields. The QA step catches these but does not auto-correct.
+- Exactly 2 LLM calls per run regardless of input length.
+- Duplicate detection is URL-based; pasted-text duplicates are not caught.
+
+---
+
+## License
+
+MIT

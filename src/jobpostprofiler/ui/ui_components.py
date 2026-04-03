@@ -347,11 +347,31 @@ def render_tracker_tab() -> None:
             "Role":     j.get("title") or "—",
             "Status":   status.replace("_", " "),
             "Match":    match,
+            "Channel":  (j.get("source_channel") or "").replace("_", " "),
             "Added":    j.get("date_found") or "—",
+            "URL":      j.get("url") or "",
         })
 
     df = pd.DataFrame(display_rows)
-    st.dataframe(df, width='stretch', hide_index=True)
+    st.dataframe(
+        df,
+        column_config={
+            "URL": st.column_config.LinkColumn(
+                "Link",
+                display_text="Open",
+                width="small",
+            ),
+            "Channel": st.column_config.TextColumn(
+                "Channel",
+                width="small",
+            ),
+            "Match": st.column_config.TextColumn(
+                width="small",
+            ),
+        },
+        hide_index=True,
+        use_container_width=True,
+    )
 
     # ── Row selector ──────────────────────────────────────────────────────
     job_options = {

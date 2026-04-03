@@ -124,6 +124,16 @@ def cmd_show(args):
     if pref:
         print(f"  Preferred skills:{', '.join(pref)}")
 
+    # Parse stored extract for soft_skills
+    raw_extract = job.get("extract_json") or ""
+    extract_json = None
+    if raw_extract:
+        try:
+            extract_json = json.loads(raw_extract)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    soft = extract_json.get("soft_skills", []) if isinstance(extract_json, dict) else []
+
     if job.get("match_score") is not None:
         print(f"\n  Skill Match:     {job['match_score']:.0%}")
         # Show breakdown if my_skills.json is available
@@ -136,6 +146,8 @@ def cmd_show(args):
                     user_skills=user_skills,
                     required_skills=req,
                     preferred_skills=pref,
+                    user_soft_skills=user_profile.get("soft_skills", []),
+                    job_soft_skills=soft,
                 )
                 if req:
                     print(f"    Required:      {len(match_result.required_matched)}/{len(req)}  "
@@ -364,6 +376,8 @@ def cmd_rescore(args):
         print("  No jobs in tracker. Nothing to do.")
         return
 
+    user_soft_skills = user_profile.get("soft_skills", [])
+
     updated  = 0
     skipped  = 0
     for job in jobs:
@@ -372,7 +386,20 @@ def cmd_rescore(args):
         if not required and not preferred:
             skipped += 1
             continue
-        result = compute_match(user_skills, required, preferred)
+        # Parse stored extract for soft_skills
+        raw_extract = job.get("extract_json") or ""
+        extract_json = None
+        if raw_extract:
+            try:
+                extract_json = json.loads(raw_extract)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        soft = extract_json.get("soft_skills", []) if isinstance(extract_json, dict) else []
+        result = compute_match(
+            user_skills, required, preferred,
+            user_soft_skills=user_soft_skills,
+            job_soft_skills=soft,
+        )
         update_job(job["id"], match_score=result.overall_score)
         updated += 1
 

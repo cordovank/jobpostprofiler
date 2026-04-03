@@ -179,6 +179,8 @@ def run_pipeline(
                 user_skills=user_skills,
                 required_skills=extract.skills.required,
                 preferred_skills=extract.skills.preferred,
+                user_soft_skills=user_profile.get("soft_skills", []),
+                job_soft_skills=extract.soft_skills,
             )
             # Annotate which missing skills are bridgeable.
             # These are private attributes — not part of the MatchResult

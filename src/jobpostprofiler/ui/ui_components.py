@@ -152,6 +152,7 @@ def render_match_score(match_result, qa_json: Optional[Dict] = None) -> None:
     overall  = f"{match_result.overall_score:.0%}"
     req_pct  = f"{match_result.required_pct:.0%}"
     pref_pct = f"{match_result.preferred_pct:.0%}"
+    soft_pct = f"{match_result.soft_pct:.0%}"
 
     qa_passed = qa_json.get("passed", True) if qa_json else True
     qa_label  = "Audit passed" if qa_passed else "Audit issues"
@@ -171,6 +172,10 @@ def render_match_score(match_result, qa_json: Optional[Dict] = None) -> None:
             <div class="match-stat-num">{pref_pct}</div>
             <div class="match-stat-label">preferred</div>
         </div>
+        <div class="match-stat">
+            <div class="match-stat-num">{soft_pct}</div>
+            <div class="match-stat-label">soft skills</div>
+        </div>
         <span class="{qa_class}">{qa_label}</span>
     </div>
     """)
@@ -182,9 +187,10 @@ def render_match_score(match_result, qa_json: Optional[Dict] = None) -> None:
                        if s not in req_bridgeable]
     pref_true_gap   = [s for s in match_result.preferred_missing
                        if s not in pref_bridgeable]
+    soft_true_gap   = match_result.soft_missing
 
     has_any_gap = (req_bridgeable or pref_bridgeable
-                   or req_true_gap or pref_true_gap)
+                   or req_true_gap or pref_true_gap or soft_true_gap)
 
     if has_any_gap:
         with st.expander("Skill gap breakdown", expanded=False):
@@ -207,6 +213,11 @@ def render_match_score(match_result, qa_json: Optional[Dict] = None) -> None:
                 st.caption("Preferred — bridgeable ⚡")
                 st.markdown(
                     "  ".join(f"`{s}`" for s in pref_bridgeable) or "—"
+                )
+            if soft_true_gap:
+                st.caption("Soft skills — not in profile")
+                st.markdown(
+                    "  ".join(f"`{s}`" for s in soft_true_gap) or "—"
                 )
 
 
@@ -251,10 +262,13 @@ def _render_job_detail(job: Dict[str, Any]) -> None:
                 user_skills = user_profile.get("skills", [])
                 bridgeable = {s.lower().strip() for s in user_profile.get("bridgeable", [])}
                 if user_skills:
+                    soft = extract_json.get("soft_skills", []) if isinstance(extract_json, dict) else []
                     match_result = compute_match(
                         user_skills=user_skills,
                         required_skills=req_skills,
                         preferred_skills=pref_skills,
+                        user_soft_skills=user_profile.get("soft_skills", []),
+                        job_soft_skills=soft,
                     )
                     match_result._req_bridgeable = [
                         s for s in match_result.required_missing
@@ -315,6 +329,37 @@ def render_tracker_tab() -> None:
             <div class="status-stat-label">{label}</div>
         </div>"""
     st.html(f'<div class="status-strip">{strip_items}</div>')
+
+    # ── Rescore button ────────────────────────────────────────────────────
+    user_profile = load_user_profile()
+    if user_profile and user_profile.get("skills"):
+        if st.button("Rescore all", type="secondary"):
+            from jobpostprofiler.core.skill_match import compute_match
+            user_skills = user_profile.get("skills", [])
+            user_soft_skills = user_profile.get("soft_skills", [])
+            updated = 0
+            for j in jobs:
+                req = json.loads(j.get("required_skills") or "[]")
+                pref = json.loads(j.get("preferred_skills") or "[]")
+                if not req and not pref:
+                    continue
+                raw_ext = j.get("extract_json") or ""
+                ext = None
+                if raw_ext:
+                    try:
+                        ext = json.loads(raw_ext)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                soft = ext.get("soft_skills", []) if isinstance(ext, dict) else []
+                result = compute_match(
+                    user_skills, req, pref,
+                    user_soft_skills=user_soft_skills,
+                    job_soft_skills=soft,
+                )
+                update_job(j["id"], match_score=result.overall_score)
+                updated += 1
+            st.toast(f"Rescored {updated} job(s)")
+            st.rerun()
 
     # ── Jobs table ────────────────────────────────────────────────────────
     import pandas as pd
